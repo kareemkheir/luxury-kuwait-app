@@ -23,6 +23,7 @@ import { initStatement, statementHome, chequesHome } from './statement.js';
 import { initActivity, getLoc } from './activity.js';
 import { initCalendar, calendarHome } from './calendar.js';
 import { initReport, reportHome } from './report.js';
+import { initBackup, backupHome } from './backup.js';
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb), db = getFirestore(fb);
 const mail = u => u.trim().toLowerCase().replace(/[^a-z0-9]/g, '') + '@kitchenware.app';
@@ -47,7 +48,7 @@ const catOf = p => p.cat || CATMAP[p.c] || 'others';
 const pimg = (c, big) => IMGMAP[c] ? `<img class="pt${big ? ' big' : ''}" loading="lazy" src="./img/${IMGMAP[c]}" data-full="./img/${IMGMAP[c]}" alt="">` : '';
 document.addEventListener('click', e => { const t = e.target; if (t.classList && t.classList.contains('pt')) { e.stopPropagation(); e.preventDefault(); const m = modal(`<img src="${t.dataset.full}" style="width:100%;max-height:70vh;object-fit:contain;background:#fff;border-radius:12px"><button class="btn l" id="zc">Close</button>`); m.querySelector('#zc').onclick = () => m.remove(); } }, true);
 const CTX = { SUBS, subOf: p => subOf(p), subRank: p => subRank(p), isHidden: p => isHidden(p), catOf: p => catOf(p), CATLIST, img: (c, b) => pimg(c, b), db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), loadBarcodes: f => loadBarcodes(f), editCustomer: (c, f) => editCustomer(c, f) };
-initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX); initReport(CTX);
+initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX); initReport(CTX); initBackup(CTX);
 
 const ROLE_HOME = {
   admin: ['invoice', 'return', 'stock', 'statement', 'report', 'calendar'],
@@ -115,7 +116,7 @@ function top(title, back = true) {
 }
 function go(v, arg) {
   S.view = v; S.arg = arg;
-  const fn = { home, stock, statement: statementHome, cheques: chequesHome, calendar: calendarHome, report: reportHome, staff, invoice: invoiceHome, return: returnHome, comingsoon }[v] || comingsoon;
+  const fn = { home, stock, statement: statementHome, cheques: chequesHome, calendar: calendarHome, report: reportHome, backup: backupHome, staff, invoice: invoiceHome, return: returnHome, comingsoon }[v] || comingsoon;
   fn();
   const bk = document.getElementById('bk'); if (bk) bk.onclick = () => go('home');
   const lo = document.getElementById('lo'); if (lo) lo.onclick = () => signOut(auth);
