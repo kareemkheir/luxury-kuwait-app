@@ -1,4 +1,4 @@
-import { doc, getDocs, collection, runTransaction, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { doc, getDocs, setDoc, collection, runTransaction, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 let X; // shared context from app.js
 export function initInvoices(ctx) { X = ctx; }
@@ -104,7 +104,9 @@ async function customerPick() {
 async function cartView() {
   const { S, top, esc, go, kwd, toast, loadProducts } = X;
   const cart = S.cart; await loadProducts();
-  const P = S.products, by = id => P.find(p => p.id === id || p.c.toLowerCase() === String(id).toLowerCase());
+  if (!S.barcodes) { S.barcodes = {}; try { (await getDocs(collection(X.db, 'barcodes'))).docs.forEach(d => S.barcodes[d.id] = d.data().c); } catch (e) {} }
+  const bkey = c => String(c).trim().replace(/\//g, '_');
+  const P = S.products, by = id => { const k = String(id).trim(); let p = P.find(p => p.id === k || p.c.toLowerCase() === k.toLowerCase()); if (!p && S.barcodes[bkey(k)]) p = P.find(p => p.c === S.barcodes[bkey(k)]); return p; };
   const total = () => r3(cart.items.reduce((a, i) => a + i.q * i.p, 0));
   const draw = () => {
     const pcs = cart.items.reduce((a, i) => a + i.q, 0), ctn = cart.items.reduce((a, i) => a + i.q / i.pk, 0);
@@ -135,10 +137,29 @@ async function cartView() {
     $('#dd').onchange = e => { cart.delivery = e.target.value; saveCart(); };
     $('#nt').onchange = e => { cart.note = e.target.value; saveCart(); };
     $('#cn').onclick = () => { if (!cart.items.length || confirm('Throw away this invoice draft?')) { S.cart = null; saveCart(); go('invoice'); } };
-    $('#sc').onclick = () => scanner(code => { const r = addItem(code); toast(r); return true; });
+    $('#sc').onclick = () => scanner(code => {
+      if (!by(code)) { setTimeout(() => linkBarcode(code), 50); return false; }
+      toast(addItem(code)); return true;
+    });
     $('#se').onclick = searchItem;
     $('#cr').onclick = create;
   };
+  function linkBarcode(code) {
+    const m = X.modal(`<h3>Barcode not found</h3><div class="card"><div class="sub">The camera read this number:</div><b style="font-size:20px;word-break:break-all">${esc(code)}</b></div>
+      <div class="sub">Search for the item once and tap it. Next time this barcode adds it automatically.</div>
+      <input id="si" placeholder="Item number or name…"><div id="sr"></div><button class="btn l" id="cl">Close</button>`);
+    m.querySelector('#cl').onclick = () => m.remove();
+    m.querySelector('#si').oninput = e => {
+      const t = e.target.value.trim().toLowerCase(); if (t.length < 2) { m.querySelector('#sr').innerHTML = ''; return; }
+      const L = P.filter(p => p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t)).slice(0, 25);
+      m.querySelector('#sr').innerHTML = L.map(p => `<div class="card" data-c="${esc(p.c)}"><div class="row"><b>${esc(p.c)}</b><span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div>`).join('');
+      m.querySelectorAll('[data-c]').forEach(c => c.onclick = async () => {
+        try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: c.dataset.c, by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = c.dataset.c; }
+        catch (e) { return toast('Could not save the barcode'); }
+        m.remove(); toast(addItem(c.dataset.c) + ' • barcode saved');
+      });
+    };
+  }
   function addItem(code) {
     const p = by(code); if (!p) return `Not found: ${code}`;
     if (p.q <= 0) return `${p.c} is OUT OF STOCK`;

@@ -36,6 +36,11 @@ service cloud.firestore {
       allow create: if isAdmin() || (isStaff() && role() == 'sales' && request.resource.data.by == request.auth.uid);
       allow update: if isAdmin();
     }
+    match /barcodes/{id} {
+      allow read: if isStaff();
+      allow create: if isAdmin() || (isStaff() && role() == 'sales');
+      allow update, delete: if isAdmin();
+    }
     match /{coll}/{id} {
       allow read, write: if isAdmin();
     }
