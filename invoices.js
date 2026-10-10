@@ -10,6 +10,7 @@ const pad = n => String(n).padStart(5, '0');
 const dmy = d => `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const safe = s => String(s).replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+const pid = c => (((X.S.products || []).find(p => p.c === c)) || {}).id || c;   // product document id for an item code (they differ for renamed items)
 const loaded = {};
 function loadScript(url) {
   return loaded[url] ||= new Promise((res, rej) => { const s = document.createElement('script'); s.src = url; s.onload = res; s.onerror = () => rej(new Error('load ' + url)); document.head.appendChild(s); });
@@ -395,7 +396,7 @@ async function cartView(kind) {
     try {
       await runTransaction(X.db, async tx => {
         const cref = doc(X.db, 'counters', 'invoice'), cs = await tx.get(cref), no = (cs.exists() ? cs.data().n : 0) + 1;
-        const refs = items.map(i => doc(X.db, 'products', i.c)), snaps = [];
+        const refs = items.map(i => doc(X.db, 'products', pid(i.c))), snaps = [];
         for (const r of refs) snaps.push(await tx.get(r));
         snaps.forEach((s, i) => { if (!s.exists() || s.data().q < items[i].q) throw new Error('STOCK:' + items[i].c); });
         snaps.forEach((s, i) => tx.update(refs[i], { q: s.data().q - items[i].q }));
@@ -419,7 +420,7 @@ async function cartView(kind) {
     try {
       await runTransaction(X.db, async tx => {
         const cref = doc(X.db, 'counters', 'return'), cs = await tx.get(cref), no = (cs.exists() ? cs.data().n : 0) + 1;
-        const refs = good.map(i => doc(X.db, 'products', i.c)), snaps = [];
+        const refs = good.map(i => doc(X.db, 'products', pid(i.c))), snaps = [];
         for (const r of refs) snaps.push(await tx.get(r));
         snaps.forEach((s, i) => { if (s.exists()) tx.update(refs[i], { q: s.data().q + good[i].q }); });
         tx.set(cref, { n: no });
@@ -474,9 +475,10 @@ function openInvoice(inv) {
   if (cx) cx.onclick = async () => {
     if (!confirm(`Cancel ${inv.no}? The items go back into stock.`)) return;
     try {
+      await X.loadProducts();
       await runTransaction(X.db, async tx => {
         const ir = doc(X.db, 'invoices', inv.id), is = await tx.get(ir); if (is.data().status !== 'active') throw new Error('done');
-        const refs = inv.items.map(i => doc(X.db, 'products', i.c)), snaps = [];
+        const refs = inv.items.map(i => doc(X.db, 'products', pid(i.c))), snaps = [];
         for (const r of refs) snaps.push(await tx.get(r));
         snaps.forEach((s, i) => { if (s.exists()) tx.update(refs[i], { q: s.data().q + inv.items[i].q }); });
         tx.update(ir, { status: 'cancelled', cancelledBy: S.user.name, cancelledAt: Date.now() });
