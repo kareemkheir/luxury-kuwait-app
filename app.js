@@ -126,7 +126,6 @@ function home() {
   const r = S.user.role, items = ROLE_HOME[r] || [];
   const adminExtra = r === 'admin' ? `<div class="grid" style="margin-top:12px">
     <button class="big small" data-go="cheques"><span class="ic">💳</span>Cheques<span class="ar">الشيكات</span></button>
-    <button class="big small" data-go="count"><span class="ic">✅</span>Stock Count<span class="ar">جرد المخزون</span></button>
     <button class="big small" data-go="staff"><span class="ic">👥</span>Staff<span class="ar">الموظفون</span></button>
     <button class="big small" data-go="backup"><span class="ic">💾</span>Backup<span class="ar">نسخة احتياطية</span></button></div>` : '';
   $app.innerHTML = top(`Hello, ${esc(S.user.name)}`, false).replace('<h1>', '<h1 style="font-size:18px">') + `<div class="wrap"><div class="grid">${items.map(k =>
