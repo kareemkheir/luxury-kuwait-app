@@ -80,7 +80,7 @@ export function scanner(opts) {
   const showLast = r => {
     cur = r.c || null; const box = $$('#lc');
     if (!cur) { box.innerHTML = ''; return; }
-    const draw = () => { box.innerHTML = `<div class="row"><b>${X.esc(cur)}</b><span class="row" style="gap:6px"><button class="btn l" data-d="-1">−</button><input id="qn" type="number" inputmode="numeric" value="${opts.getQty(cur)}" style="width:64px;text-align:center"><button class="btn l" data-d="1">+</button></span></div>`;
+    const draw = () => { box.innerHTML = `<div class="row">${X.img(cur)}<b style="flex:1;margin-left:8px">${X.esc(cur)}</b><span class="row" style="gap:6px"><button class="btn l" data-d="-1">−</button><input id="qn" type="number" inputmode="numeric" value="${opts.getQty(cur)}" style="width:64px;text-align:center"><button class="btn l" data-d="1">+</button></span></div>`;
       box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const n = opts.setQty(cur, opts.getQty(cur) + +b.dataset.d); say(`${cur} → ${n}`, true); draw(); });
       box.querySelector('#qn').onchange = e => { const n = opts.setQty(cur, +e.target.value || 1); e.target.value = n; }; };
     draw();
@@ -268,7 +268,7 @@ async function cartView(kind) {
       <div class="grid" style="margin-bottom:10px"><button class="btn" id="sc">📷 Scan</button><button class="btn l" id="se">🔎 Search item</button></div>
       <button class="btn l" id="ph" style="margin-top:0">${R ? '🖼 Photo: barcode or printed item number' : '🖼 Read barcode from photo'}</button><input type="file" id="pf" accept="image/*" multiple style="display:none">
       ${cart.items.length === 0 ? '<div class="card sub">No items yet. Scan a barcode or search for an item.</div>' : ''}
-      ${cart.items.map((it, i) => `<div class="card"><div class="row"><b>${esc(it.c)}</b><button class="pill r" data-rm="${i}" style="border:0">Remove</button></div>
+      ${cart.items.map((it, i) => `<div class="card pc">${X.img(it.c)}<div class="pcb"><div class="row"><b>${esc(it.c)}</b><button class="pill r" data-rm="${i}" style="border:0">Remove</button></div>
         <div class="sub">${esc(it.en)}</div><div class="ar sub">${esc(it.ar)}</div>
         <div class="row" style="margin-top:6px"><div style="flex:1"><label>${R ? 'Pieces returned' : 'Pieces (stock ' + it.stock + ')'}</label><input type="number" inputmode="numeric" data-q="${i}" value="${it.q}"></div>
         <button class="btn l" style="width:auto;margin:20px 0 0" data-ctn="${i}">+1 carton<br><span class="sub">(${it.pk} pcs)</span></button></div>
@@ -352,7 +352,7 @@ async function cartView(kind) {
     m.querySelector('#si').oninput = e => {
       const t = e.target.value.trim().toLowerCase(); if (t.length < 2) { m.querySelector('#sr').innerHTML = ''; return; }
       const L = P.filter(p => p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t)).slice(0, 25);
-      m.querySelector('#sr').innerHTML = L.map(p => `<div class="card" data-c="${esc(p.c)}"><div class="row"><b>${esc(p.c)}</b><span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div>`).join('');
+      m.querySelector('#sr').innerHTML = L.map(p => `<div class="card pc" data-c="${esc(p.c)}">${X.img(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b><span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div></div>`).join('');
       m.querySelectorAll('[data-c]').forEach(c => c.onclick = async () => {
         try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: c.dataset.c, code: String(code).trim(), by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = c.dataset.c; (S.barcodeCodes ||= {})[bkey(code)] = String(code).trim(); }
         catch (e) { return toast('Could not save the barcode'); }
@@ -374,7 +374,7 @@ async function cartView(kind) {
     m.querySelector('#si').oninput = e => {
       const t = e.target.value.trim().toLowerCase(); if (t.length < 2) { m.querySelector('#sr').innerHTML = ''; return; }
       const L = P.filter(p => p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t)).slice(0, 25);
-      m.querySelector('#sr').innerHTML = L.map(p => `<div class="card" data-c="${esc(p.c)}"><div class="row"><b>${esc(p.c)}</b><span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div>`).join('');
+      m.querySelector('#sr').innerHTML = L.map(p => `<div class="card pc" data-c="${esc(p.c)}">${X.img(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b><span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div></div>`).join('');
       m.querySelectorAll('[data-c]').forEach(c => c.onclick = () => { const r = addItem(c.dataset.c); toast(r); if (r.startsWith('Added')) m.remove(); });
     };
   }

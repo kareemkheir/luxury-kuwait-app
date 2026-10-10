@@ -44,3 +44,6 @@ label{font-size:14px;color:var(--m);font-weight:600}
 .scan-msg{font-weight:700;padding:10px;border-radius:10px;background:rgba(128,128,128,.15);text-align:center}
 .scan-msg.ok{background:#1b8a3a;color:#fff}.scan-msg.bad{background:#c0392b;color:#fff}
 .scan-last{min-height:0}
+
+.pc{display:flex;gap:10px;align-items:center}.pcb{flex:1;min-width:0}
+img.pt{width:56px;height:72px;object-fit:contain;background:#fff;border-radius:8px;flex:none;cursor:zoom-in}

@@ -30,7 +30,10 @@ const pw = pin => pin + '-kw';
 
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
-const CTX = { db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), loadBarcodes: f => loadBarcodes(f), editCustomer: (c, f) => editCustomer(c, f) };
+let IMGMAP = {}; fetch('./imgmap.json', { cache: 'no-store' }).then(r => r.json()).then(m => { IMGMAP = m; }).catch(() => {});
+const pimg = (c, big) => IMGMAP[c] ? `<img class="pt${big ? ' big' : ''}" loading="lazy" src="./img/${IMGMAP[c]}" data-full="./img/${IMGMAP[c]}" alt="">` : '';
+document.addEventListener('click', e => { const t = e.target; if (t.classList && t.classList.contains('pt')) { e.stopPropagation(); e.preventDefault(); const m = modal(`<img src="${t.dataset.full}" style="width:100%;max-height:70vh;object-fit:contain;background:#fff;border-radius:12px"><button class="btn l" id="zc">Close</button>`); m.querySelector('#zc').onclick = () => m.remove(); } }, true);
+const CTX = { img: (c, b) => pimg(c, b), db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), loadBarcodes: f => loadBarcodes(f), editCustomer: (c, f) => editCustomer(c, f) };
 initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX); initReport(CTX);
 
 const ROLE_HOME = {
@@ -166,10 +169,10 @@ async function stock() {
       <div class="tabs"><button data-f="all" class="${filter === 'all' ? 'on' : ''}">All ${P.length}</button>
       <button data-f="low" class="${filter === 'low' ? 'on' : ''}">Low ${low}</button>
       <button data-f="zero" class="${filter === 'zero' ? 'on' : ''}">Out ${zero}</button></div>
-      ${shown.map(p => `<div class="card" data-id="${esc(p.id)}"><div class="row"><b>${esc(p.c)}</b>
+      ${shown.map(p => `<div class="card pc" data-id="${esc(p.id)}">${pimg(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b>
         <span class="pill ${p.q <= 0 ? 'r' : p.q <= LOW() ? 'o' : 'g'}">${p.q <= 0 ? 'OUT' : p.q} ${p.q > 0 ? 'pcs' : ''}</span></div>
         <div>${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div>
-        ${(IB[p.c] || []).length ? `<div class="sub">▮▯ ${(IB[p.c]).map(b => esc(b.code)).join(' • ')}</div>` : ''}<div class="sub">Packing ${p.pk} • ${kwd(p.p)} KWD${p.pk && p.q > 0 ? ` • ${(p.q / p.pk).toFixed(1)} cartons` : ''}</div></div>`).join('')}
+        ${(IB[p.c] || []).length ? `<div class="sub">▮▯ ${(IB[p.c]).map(b => esc(b.code)).join(' • ')}</div>` : ''}<div class="sub">Packing ${p.pk} • ${kwd(p.p)} KWD${p.pk && p.q > 0 ? ` • ${(p.q / p.pk).toFixed(1)} cartons` : ''}</div></div></div>`).join('')}
       ${L.length > 80 ? `<div class="sub" style="text-align:center">Showing 80 of ${L.length}. Type to narrow down.</div>` : ''}
       ${L.length === 0 ? '<div class="card">No items found.</div>' : ''}</div>`;
     document.getElementById('bk').onclick = () => go('home');
