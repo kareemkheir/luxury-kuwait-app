@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function role() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+    function active() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true; }
+    function isAdmin() { return signedIn() && active() && role() == 'admin'; }
+    function isStaff() { return signedIn() && active(); }
+    function setupDone() { return exists(/databases/$(database)/documents/config/setup); }
+
+    match /config/setup {
+      allow read: if true;
+      allow create: if signedIn() && !setupDone();
+    }
+    match /config/{d} { allow read: if isStaff(); allow write: if isAdmin(); }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && (request.auth.uid == uid && !setupDone() || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+    match /products/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+      allow update: if isStaff() && role() == 'sales' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['q']);
+    }
+    match /customers/{id} {
+      allow read: if isStaff() && role() != 'warehouse' || isAdmin();
+      allow write: if isAdmin();
+    }
+    match /{coll}/{id} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
