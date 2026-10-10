@@ -36,3 +36,11 @@ label{font-size:14px;color:var(--m);font-weight:600}
 .tabs{display:flex;gap:8px;margin-bottom:10px;overflow:auto}
 .tabs button{flex:1;border:0;border-radius:12px;padding:11px 8px;font-size:15px;font-weight:700;background:#e8eef9;color:var(--b);white-space:nowrap}
 .tabs button.on{background:var(--b);color:#fff}
+
+.scan-ov{position:fixed;inset:0;z-index:15;background:var(--bg);padding:10px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.scan-box{position:relative;border-radius:14px;overflow:hidden;background:#000}
+.scan-box video{width:100%;max-height:42vh;object-fit:cover;display:block}
+.scan-frame{position:absolute;left:5%;right:5%;top:25%;bottom:25%;border:3px solid rgba(255,255,255,.8);border-radius:10px;pointer-events:none}
+.scan-msg{font-weight:700;padding:10px;border-radius:10px;background:rgba(128,128,128,.15);text-align:center}
+.scan-msg.ok{background:#1b8a3a;color:#fff}.scan-msg.bad{background:#c0392b;color:#fff}
+.scan-last{min-height:0}

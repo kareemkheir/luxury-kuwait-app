@@ -54,37 +54,93 @@ export async function sendFile(blob, filename, mode) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
 }
 
-/* ---------- Barcode scanner (camera) ---------- */
-export function scanner(onCode, onSnap) {
-  const m = X.modal(`<h3>Scan barcode</h3><video id="vd" playsinline muted style="width:100%;border-radius:12px;background:#000;max-height:50vh"></video>
-    <div class="sub" id="sm">Starting camera…</div>${onSnap ? '<button class="btn g" id="sn">📸 Read printed item number</button>' : ''}<button class="btn l" id="cl">Close</button>`);
-  let reader, stopped = false, last = '', lastT = 0, pend = '', pendN = 0;
-  const stop = () => { stopped = true; try { reader && reader.reset(); } catch (e) {} m.remove(); };
-  m.querySelector('#cl').onclick = stop;
-  const sn = m.querySelector('#sn');
-  if (sn) sn.onclick = () => {
-    const v = m.querySelector('#vd'); if (!v.videoWidth) return;
-    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
-    stop(); onSnap(c);
+/* ---------- Live scanner: stays open, reads barcodes AND printed item numbers automatically ---------- */
+function beep(ok) {
+  try { navigator.vibrate && navigator.vibrate(ok ? 60 : [80, 60, 80]); } catch (e) {}
+  try {
+    const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
+    o.frequency.value = ok ? 1100 : 300; g.gain.value = 0.08; o.connect(g); g.connect(a.destination); o.start(); setTimeout(() => { o.stop(); a.close(); }, ok ? 110 : 260);
+  } catch (e) {}
+}
+// opts: onCode(code)->{ok,msg,c?,unknown?} | onText(text)->{ok,msg,c?}|null | setQty(c,n)->n | getQty(c) | onDone()
+export function scanner(opts) {
+  const ov = document.createElement('div'); ov.className = 'scan-ov';
+  ov.innerHTML = `<div class="scan-box"><video id="vd" playsinline muted></video><div class="scan-frame"></div></div>
+    <div id="sm" class="scan-msg">Starting camera…</div>
+    <div id="lc" class="scan-last"></div>
+    <div class="row" style="gap:8px;margin:6px 0"><button class="btn l" id="tq" style="display:none">🔦 Light</button><input id="zm" type="range" style="display:none;flex:1"></div>
+    <div class="row" style="gap:8px"><input id="mi" placeholder="Or type item number" style="flex:1"><button class="btn l" id="ma">Add</button></div>
+    <button class="btn g" id="cl">Done</button>`;
+  document.body.appendChild(ov);
+  const $$ = s => ov.querySelector(s);
+  let reader, stopped = false, paused = false, track, last = '', lastT = 0, pend = '', pendN = 0, ocrBusy = false, ocrKey = '', ocrN = 0, ocrDone = '', lastRead = 0, cur = null;
+  const stop = () => { if (stopped) return; stopped = true; try { track && track.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) {} try { reader && reader.reset(); } catch (e) {} ov.remove(); opts.onDone && opts.onDone(); };
+  $$('#cl').onclick = stop;
+  const say = (t, ok) => { const s = $$('#sm'); s.textContent = t; s.className = 'scan-msg' + (ok === true ? ' ok' : ok === false ? ' bad' : ''); };
+  const showLast = r => {
+    cur = r.c || null; const box = $$('#lc');
+    if (!cur) { box.innerHTML = ''; return; }
+    const draw = () => { box.innerHTML = `<div class="row"><b>${X.esc(cur)}</b><span class="row" style="gap:6px"><button class="btn l" data-d="-1">−</button><input id="qn" type="number" inputmode="numeric" value="${opts.getQty(cur)}" style="width:64px;text-align:center"><button class="btn l" data-d="1">+</button></span></div>`;
+      box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const n = opts.setQty(cur, opts.getQty(cur) + +b.dataset.d); say(`${cur} → ${n}`, true); draw(); });
+      box.querySelector('#qn').onchange = e => { const n = opts.setQty(cur, +e.target.value || 1); e.target.value = n; }; };
+    draw();
   };
+  const handle = r => {
+    if (!r) return false; lastRead = Date.now();
+    beep(r.ok); say(r.msg, r.ok); showLast(r);
+    if (r.unknown) { paused = true; stop(); setTimeout(() => opts.onUnknown(r.unknown), 50); }
+    return true;
+  };
+  $$('#ma').onclick = () => { const v = $$('#mi').value.trim(); if (!v) return; $$('#mi').value = ''; const r = opts.onCode(v); r.unknown ? (say('Not found: ' + v, false), beep(false)) : handle(r); };
   (async () => {
     try {
       await loadScript(ZXING);
       const hints = new Map(), F = ZXing.BarcodeFormat;
       hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39]);
       hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-      reader = new ZXing.BrowserMultiFormatReader(hints, 120);
-      m.querySelector('#sm').textContent = 'Point the camera at the barcode';
-      await reader.decodeFromVideoDevice(undefined, m.querySelector('#vd'), res => {
-        if (stopped || !res) return;
-        const t = res.getText(), now = Date.now();
-        // a code counts only when read twice in a row (filters one-frame misreads)
-        if (t !== pend) { pend = t; pendN = 1; return; }
-        if (++pendN < 2) return;
-        if (t === last && now - lastT < 2500) return; last = t; lastT = now;
-        const keep = onCode(t); if (keep === false) stop();
-      });
-    } catch (e) { const s = m.querySelector('#sm'); if (s) s.textContent = 'Camera not available. Allow camera access, or type the item number.'; }
+      reader = new ZXing.BrowserMultiFormatReader(hints, 80);
+      const v = $$('#vd');
+      say('Point at the barcode or the printed item number');
+      reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } }, v, res => {
+        if (stopped || paused || !res) return;
+        const t = res.getText(), now = Date.now(), f = res.getBarcodeFormat();
+        const strong = f === F.EAN_13 || f === F.EAN_8 || f === F.UPC_A || f === F.UPC_E;   // these have a built-in check digit
+        if (!strong) { if (t !== pend) { pend = t; pendN = 1; return; } if (++pendN < 2) return; }
+        if (t === last && now - lastT < 1800) { lastT = now; return; } last = t; lastT = now;
+        handle(opts.onCode(t));
+      }).catch(() => {});
+      // light + zoom when the phone supports them
+      setTimeout(() => {
+        try {
+          track = v.srcObject.getVideoTracks()[0]; const cap = track.getCapabilities ? track.getCapabilities() : {};
+          if (cap.torch) { const b = $$('#tq'); b.style.display = ''; let on = false; b.onclick = () => { on = !on; track.applyConstraints({ advanced: [{ torch: on }] }).catch(() => {}); }; }
+          if (cap.zoom) { const z = $$('#zm'); z.style.display = ''; z.min = cap.zoom.min; z.max = Math.min(cap.zoom.max, 5); z.step = cap.zoom.step || 0.1; z.value = cap.zoom.min; z.oninput = () => track.applyConstraints({ advanced: [{ zoom: +z.value }] }).catch(() => {}); }
+          if (cap.focusMode && cap.focusMode.includes('continuous')) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+        } catch (e) {}
+      }, 1200);
+      // automatic reading of printed item numbers (no extra button): tries the middle of the picture every ~1 second
+      if (opts.onText) {
+        loadScript(TESS).catch(() => {});
+        const loop = async () => {
+          while (!stopped) {
+            await new Promise(r => setTimeout(r, 900));
+            if (stopped || paused || ocrBusy || !v.videoWidth || Date.now() - lastRead < 1500) continue;
+            ocrBusy = true;
+            try {
+              const w = v.videoWidth, h = v.videoHeight, cw = w * 0.9, ch = h * 0.5, c = document.createElement('canvas'), k = Math.min(1, 1100 / cw);
+              c.width = Math.round(cw * k); c.height = Math.round(ch * k);
+              c.getContext('2d').drawImage(v, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, c.width, c.height);
+              const r = opts.onText(await ocrText(c, 1100), true);
+              if (r && r.key && r.key === ocrDone) { /* same label still in view */ }
+              else if (r && r.key) { ocrDone = ''; if (r.key === ocrKey) ocrN++; else { ocrKey = r.key; ocrN = 1; } if (ocrN >= 2) { ocrDone = r.key; ocrKey = ''; ocrN = 0; if (!stopped && !paused) handle(opts.onText(null, false)); } }
+              else { ocrKey = ''; ocrN = 0; ocrDone = ''; }
+            } catch (e) { console.error(e); }
+            ocrBusy = false;
+          }
+        };
+        loop();
+      }
+    } catch (e) { say('Camera not available. Allow camera access, or type the item number below.', false); }
   })();
   return stop;
 }
@@ -93,8 +149,8 @@ export function scanner(onCode, onSnap) {
 /* ---------- Read a printed item number from a photo (OCR) ---------- */
 const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 let ocrWorker;
-async function prepImage(file) {
-  const img = await createImageBitmap(file), k = Math.min(2200 / Math.max(img.width, img.height), 2.5);
+async function prepImage(file, max = 2200) {
+  const img = await createImageBitmap(file), k = Math.min(max / Math.max(img.width, img.height), 2.5);
   const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
   const x = c.getContext('2d'); x.drawImage(img, 0, 0, c.width, c.height);
   const d = x.getImageData(0, 0, c.width, c.height), g = new Uint8Array(c.width * c.height); let lo = 255, hi = 0;
@@ -103,11 +159,11 @@ async function prepImage(file) {
   for (let i = 0, j = 0; i < d.data.length; i += 4, j++) { const v = Math.min(255, Math.max(0, ((g[j] - lo) * 255 / r) | 0)); d.data[i] = d.data[i + 1] = d.data[i + 2] = v; }
   x.putImageData(d, 0, 0); return c;
 }
-async function ocrText(file) {
+async function ocrText(file, max) {
   await loadScript(TESS);
   ocrWorker ||= await Tesseract.createWorker('eng');
   await ocrWorker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-', tessedit_pageseg_mode: '11' });
-  return (await ocrWorker.recognize(await prepImage(file))).data.text;
+  return (await ocrWorker.recognize(await prepImage(file, max))).data.text;
 }
 // Compare codes ignoring look-alike letters/digits (O/0, I/L/1, S/5, B/8, Z/2) because OCR confuses them.
 const canon = s => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
@@ -205,20 +261,21 @@ async function cartView(kind) {
     document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { cart.items[+b.dataset.dm].note = 'damaged'; saveCart(kind); draw(); });
     $('#nt').onchange = e => { cart.note = e.target.value; saveCart(kind); };
     $('#cn').onclick = () => { if (!cart.items.length || confirm('Throw away this draft?')) { S[F] = null; saveCart(kind); go(R ? 'return' : 'invoice'); } };
-    $('#sc').onclick = () => scanner(code => {
-      if (!by(code)) { setTimeout(() => linkBarcode(code), 50); return false; }
-      toast(addItem(code)); return true;
-    }, snapRead);
+    $('#sc').onclick = () => {
+      let pendingHit = null;
+      const res = c => { const r = addItem(c), p = by(c); return { ok: r.startsWith('Added'), msg: r.startsWith('Added') ? `✔ ${p.c} — ${p.en || ''}` : r, c: p ? p.c : null }; };
+      scanner({
+        onCode: code => by(code) ? res(code) : { ok: false, unknown: code, msg: 'Unknown barcode ' + code },
+        onText: (text, probe) => {
+          if (probe) { const h = matchText(text, S.products); pendingHit = h.length === 1 ? h[0] : null; return pendingHit ? { key: pendingHit.c } : null; }
+          return pendingHit ? res(pendingHit.c) : null;
+        },
+        onUnknown: code => linkBarcode(code),
+        getQty: c => (cart.items.find(i => i.c === c) || {}).q || 0,
+        setQty: (c, n) => { const it = cart.items.find(i => i.c === c); if (!it) return 0; n = Math.max(1, Math.floor(n) || 1); if (!R && n > it.stock) { toast(`Only ${it.stock} in stock`); n = it.stock; } it.q = n; saveCart(kind); draw(); return n; }
+      });
+    };
     $('#se').onclick = searchItem;
-    async function snapRead(cv) {
-      try {
-        toast('Reading the printed number…');
-        const hits = matchText(await ocrText(cv), S.products);
-        if (hits.length === 1) return toast(addItem(hits[0].c));
-        if (hits.length > 1) return pickOne(hits, null);
-        toast('Could not read an item number. Get closer so the number fills the screen, or use Search.');
-      } catch (err) { console.error(err); toast('Could not read the photo'); }
-    }
     $('#cr').onclick = R ? createReturn : create;
     $('#ph').onclick = () => $('#pf').click();
     $('#pf').onchange = async e => {
