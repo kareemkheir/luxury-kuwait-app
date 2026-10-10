@@ -16,6 +16,8 @@ if (!firebaseConfig) {
 
 import { initInvoices, invoiceHome } from './invoices.js';
 import { initStatement, statementHome, chequesHome } from './statement.js';
+import { initActivity, checkInModal } from './activity.js';
+import { initCalendar, calendarHome } from './calendar.js';
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb), db = getFirestore(fb);
 const mail = u => u.trim().toLowerCase().replace(/[^a-z0-9]/g, '') + '@kitchenware.app';
@@ -24,7 +26,7 @@ const pw = pin => pin + '-kw';
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
 const CTX = { db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), editCustomer: (c, f) => editCustomer(c, f) };
-initInvoices(CTX); initStatement(CTX);
+initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX);
 
 const ROLE_HOME = {
   admin: ['invoice', 'return', 'stock', 'statement', 'report', 'calendar'],
@@ -92,7 +94,7 @@ function top(title, back = true) {
 }
 function go(v, arg) {
   S.view = v; S.arg = arg;
-  const fn = { home, stock, statement: statementHome, cheques: chequesHome, staff, invoice: invoiceHome, comingsoon }[v] || comingsoon;
+  const fn = { home, stock, statement: statementHome, cheques: chequesHome, calendar: calendarHome, staff, invoice: invoiceHome, comingsoon }[v] || comingsoon;
   fn();
   const bk = document.getElementById('bk'); if (bk) bk.onclick = () => go('home');
   const lo = document.getElementById('lo'); if (lo) lo.onclick = () => signOut(auth);
@@ -108,8 +110,10 @@ function home() {
     <button class="big small" data-go="backup"><span class="ic">💾</span>Backup<span class="ar">نسخة احتياطية</span></button></div>` : '';
   $app.innerHTML = top(`Hello, ${esc(S.user.name)}`, false).replace('<h1>', '<h1 style="font-size:18px">') + `<div class="wrap"><div class="grid">${items.map(k =>
     `<button class="big" data-go="${k}"><span class="ic">${BTN[k][0]}</span>${BTN[k][1]}<span class="ar">${BTN[k][2]}</span></button>`).join('')}</div>${adminExtra}
+    ${r === 'sales' ? '<button class="btn l" id="cin" style="margin-top:12px">📍 Check in • تسجيل الحضور</button>' : ''}
     <p class="sub" style="text-align:center;margin-top:24px">${esc(S.user.role)} • ${esc(S.user.username || '')}</p></div>`;
   $app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+  const cin = document.getElementById('cin'); if (cin) cin.onclick = checkInModal;
   const lo = document.getElementById('lo'); if (lo) lo.onclick = () => signOut(auth);
 }
 

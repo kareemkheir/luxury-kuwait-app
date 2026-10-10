@@ -1,3 +1,4 @@
+import { logEvent } from './activity.js';
 import { doc, getDocs, setDoc, collection, runTransaction, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 let X; // shared context from app.js
@@ -206,7 +207,7 @@ async function cartView() {
       if (String(e.message).startsWith('STOCK:')) { await loadProducts(true); return alert('Not enough stock for ' + e.message.slice(6) + '. Stock was updated; please check quantities.'); }
       console.error(e); return toast('Could not create invoice. Try again.');
     }
-    S.products = null; S.cart = null; saveCart(); done(inv);
+    S.products = null; S.cart = null; saveCart(); logEvent('invoice', { ref: inv.no, cust: inv.cust, custEn: inv.custEn, total: inv.total }); done(inv);
   }
   draw();
 }
@@ -258,7 +259,7 @@ function openInvoice(inv) {
         snaps.forEach((s, i) => { if (s.exists()) tx.update(refs[i], { q: s.data().q + inv.items[i].q }); });
         tx.update(ir, { status: 'cancelled', cancelledBy: S.user.name, cancelledAt: Date.now() });
       });
-      X.S.products = null; m.remove(); toast('Invoice cancelled, stock returned'); X.go('invoice');
+      logEvent('invoice_cancel', { ref: inv.no, cust: inv.cust, custEn: inv.custEn }); X.S.products = null; m.remove(); toast('Invoice cancelled, stock returned'); X.go('invoice');
     } catch (e) { toast('Could not cancel'); }
   };
 }

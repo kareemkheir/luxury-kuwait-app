@@ -34,7 +34,11 @@ service cloud.firestore {
     match /invoices/{id} {
       allow read: if isStaff();
       allow create: if isAdmin() || (isStaff() && role() == 'sales' && request.resource.data.by == request.auth.uid);
-      allow update: if isAdmin();
+      allow update: if isAdmin() || (isStaff() && role() == 'warehouse' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'delivery', 'deliveredBy', 'deliveredAt', 'delays']));
+    }
+    match /events/{id} {
+      allow create: if isStaff() && request.resource.data.uid == request.auth.uid;
+      allow read: if isAdmin();
     }
     match /barcodes/{id} {
       allow read: if isStaff();
