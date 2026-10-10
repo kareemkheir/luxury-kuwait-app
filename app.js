@@ -18,7 +18,7 @@ if (!firebaseConfig) {
   throw new Error('no config');
 }
 
-import { initInvoices, invoiceHome } from './invoices.js';
+import { initInvoices, invoiceHome, returnHome } from './invoices.js';
 import { initStatement, statementHome, chequesHome } from './statement.js';
 import { initActivity, getLoc } from './activity.js';
 import { initCalendar, calendarHome } from './calendar.js';
@@ -99,7 +99,7 @@ function top(title, back = true) {
 }
 function go(v, arg) {
   S.view = v; S.arg = arg;
-  const fn = { home, stock, statement: statementHome, cheques: chequesHome, calendar: calendarHome, report: reportHome, staff, invoice: invoiceHome, comingsoon }[v] || comingsoon;
+  const fn = { home, stock, statement: statementHome, cheques: chequesHome, calendar: calendarHome, report: reportHome, staff, invoice: invoiceHome, return: returnHome, comingsoon }[v] || comingsoon;
   fn();
   const bk = document.getElementById('bk'); if (bk) bk.onclick = () => go('home');
   const lo = document.getElementById('lo'); if (lo) lo.onclick = () => signOut(auth);

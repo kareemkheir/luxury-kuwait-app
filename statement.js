@@ -13,11 +13,12 @@ export const OVERDUE_DAYS = 90;
 
 /* ---------- data ---------- */
 export async function loadLedger() {
-  const [inv, chq] = await Promise.all([
+  const [inv, chq, ret] = await Promise.all([
     getDocs(query(collection(X.db, 'invoices'), orderBy('created', 'asc'))).then(s => s.docs.map(d => ({ id: d.id, ...d.data() }))),
-    getDocs(collection(X.db, 'cheques')).then(s => s.docs.map(d => ({ id: d.id, ...d.data() })))
+    getDocs(collection(X.db, 'cheques')).then(s => s.docs.map(d => ({ id: d.id, ...d.data() }))),
+    getDocs(collection(X.db, 'returns')).then(s => s.docs.map(d => ({ id: d.id, ...d.data() }))).catch(() => [])
   ]);
-  return { inv, chq };
+  return { inv, chq, ret };
 }
 // Everything about one customer's account
 export function account(cust, ledger) {
@@ -27,10 +28,11 @@ export function account(cust, ledger) {
   const paidTo = t => r3(live.reduce((a, c) => a + (c.alloc || []).filter(x => x.t === t).reduce((b, x) => b + x.a, 0), 0));
   const rows = invs.map(i => { const paid = paidTo(i.no); return { ...i, paid, rem: r3(i.total - paid) }; });
   const prev = cust.bal || 0, prevPaid = paidTo('PREV'), adv = paidTo('ADV');
-  const balance = r3(prev - prevPaid + rows.reduce((a, i) => a + i.total - i.paid, 0) - adv);
+  const rets = (ledger.ret || []).filter(r => r.cust === cust.id && r.status !== 'cancelled'), retTotal = r3(rets.reduce((a, r) => a + r.total, 0));
+  const balance = r3(prev - prevPaid + rows.reduce((a, i) => a + i.total - i.paid, 0) - adv - retTotal);
   const open = rows.filter(i => i.rem > 0.0005).sort((a, b) => a.date.localeCompare(b.date));
   const oldest = open[0], age = oldest ? dayDiff(oldest.date, today()) : 0;
-  return { prev, prevPaid, prevRem: r3(prev - prevPaid), adv, balance, rows, chqs, open, oldest, age, overdue: age > OVERDUE_DAYS };
+  return { rets, retTotal, prev, prevPaid, prevRem: r3(prev - prevPaid), adv, balance, rows, chqs, open, oldest, age, overdue: age > OVERDUE_DAYS };
 }
 
 /* ---------- customer list ---------- */
@@ -39,7 +41,7 @@ export async function statementHome() {
   $('#app').innerHTML = top('Customers • العملاء') + '<div class="wrap"><div class="sub">Loading…</div></div>';
   $('#bk').onclick = () => go('home');
   const C = await loadCustomers(true); let L0;
-  try { L0 = await loadLedger(); } catch (e) { console.error(e); L0 = { inv: [], chq: [] }; }
+  try { L0 = await loadLedger(); } catch (e) { console.error(e); L0 = { inv: [], chq: [], ret: [] }; }
   const A = new Map(C.map(c => [c.id, account(c, L0)]));
   let q = '', tab = 'all';
   const draw = () => {
@@ -90,6 +92,7 @@ async function detail(c, L0) {
       <h3>Invoices</h3>
       ${a.rows.slice().reverse().map(i => `<div class="card"><div class="row"><b>${esc(i.no)}</b><span class="pill ${i.rem > 0.0005 ? 'o' : 'g'}">${i.rem > 0.0005 ? kwd(i.rem) + ' left' : 'PAID'}</span></div>
         <div class="sub">${esc(i.date)} • total ${kwd(i.total)} • paid ${kwd(i.paid)}</div></div>`).join('') || '<div class="card sub">None.</div>'}
+      ${a.rets.length ? `<h3>Returns (credit)</h3>${a.rets.slice().reverse().map(r => `<div class="card"><div class="row"><b>${esc(r.no)}</b><span class="pill g">-${kwd(r.total)}</span></div><div class="sub">${esc(r.date)} • ${r.pieces} pieces</div></div>`).join('')}` : ''}
       <h3>Cheques</h3>
       ${a.chqs.slice().sort((x, y) => y.due.localeCompare(x.due)).map(k => chequeCard(k, false)).join('') || '<div class="card sub">None.</div>'}
       ${admin ? '<button class="btn l" id="ed">Edit customer</button>' : ''}</div>`;

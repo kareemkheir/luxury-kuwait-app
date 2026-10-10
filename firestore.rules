@@ -40,6 +40,10 @@ service cloud.firestore {
       allow create: if isStaff() && request.resource.data.uid == request.auth.uid;
       allow read: if isAdmin();
     }
+    match /returns/{id} {
+      allow read: if isAdmin() || (isStaff() && role() == 'sales');
+      allow create: if isAdmin() || (isStaff() && role() == 'sales' && request.resource.data.by == request.auth.uid);
+    }
     match /barcodes/{id} {
       allow read: if isStaff();
       allow create: if isAdmin() || (isStaff() && role() == 'sales');
