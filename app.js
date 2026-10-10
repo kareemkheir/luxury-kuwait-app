@@ -15,6 +15,7 @@ if (!firebaseConfig) {
 }
 
 import { initInvoices, invoiceHome } from './invoices.js';
+import { initStatement, statementHome, chequesHome } from './statement.js';
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb), db = getFirestore(fb);
 const mail = u => u.trim().toLowerCase().replace(/[^a-z0-9]/g, '') + '@kitchenware.app';
@@ -22,7 +23,8 @@ const pw = pin => pin + '-kw';
 
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
-initInvoices({ db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f) });
+const CTX = { db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), editCustomer: (c, f) => editCustomer(c, f) };
+initInvoices(CTX); initStatement(CTX);
 
 const ROLE_HOME = {
   admin: ['invoice', 'return', 'stock', 'statement', 'report', 'calendar'],
@@ -90,7 +92,7 @@ function top(title, back = true) {
 }
 function go(v, arg) {
   S.view = v; S.arg = arg;
-  const fn = { home, stock, statement, staff, invoice: invoiceHome, comingsoon }[v] || comingsoon;
+  const fn = { home, stock, statement: statementHome, cheques: chequesHome, staff, invoice: invoiceHome, comingsoon }[v] || comingsoon;
   fn();
   const bk = document.getElementById('bk'); if (bk) bk.onclick = () => go('home');
   const lo = document.getElementById('lo'); if (lo) lo.onclick = () => signOut(auth);
@@ -180,26 +182,6 @@ function editProduct(p, after) {
   };
 }
 
-async function statement() {
-  $app.innerHTML = top('Customers • العملاء') + '<div class="wrap"><div class="sub">Loading…</div></div>';
-  document.getElementById('bk').onclick = () => go('home');
-  const C = await loadCustomers(); let q = '', showInactive = false;
-  const draw = () => {
-    const t = q.trim().toLowerCase();
-    const L = C.filter(c => (c.active !== false || showInactive || t) && (!t || c.id.includes(t) || (c.en || '').toLowerCase().includes(t) || (c.ar || '').includes(t)))
-      .sort((a, b) => (a.en || '').localeCompare(b.en || ''));
-    $app.innerHTML = top('Customers • العملاء') + `<div class="wrap"><input id="q" placeholder="Search customer…" value="${esc(q)}">
-      ${L.map(c => `<div class="card" data-id="${c.id}"><div class="row"><b>${esc(c.en)}</b>
-        <span class="pill ${c.bal < 0 ? 'g' : c.bal > 0 ? 'o' : 'm'}">${kwd(Math.abs(c.bal))}</span></div>
-        <div class="ar sub">${esc(c.ar) || '<i>no Arabic name</i>'}</div>
-        <div class="sub">${c.id} • Previous balance ${c.bal < 0 ? '(advance payment)' : ''} 10-10-2026${c.active === false ? ' • inactive' : ''}</div></div>`).join('')}
-      <div class="sub" style="text-align:center">Full statements, invoices and the 90-day warning come in the next step.</div></div>`;
-    document.getElementById('bk').onclick = () => go('home');
-    const qi = document.getElementById('q'); qi.oninput = e => { q = e.target.value; draw(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(q.length, q.length); };
-    if (S.user.role === 'admin') $app.querySelectorAll('.card[data-id]').forEach(c => c.onclick = () => editCustomer(C.find(x => x.id === c.dataset.id), draw));
-  };
-  draw();
-}
 function editCustomer(c, after) {
   const m = modal(`<h3>${esc(c.id)}</h3>
     <label>English name</label><input id="en" value="${esc(c.en)}">
