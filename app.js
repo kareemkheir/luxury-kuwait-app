@@ -30,10 +30,10 @@ const pw = pin => pin + '-kw';
 
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
-let IMGMAP = {}, HIDDEN = new Set(), RENAMES = {};
+let IMGMAP = {}, HIDDEN = new Set(), HIDEONLY = new Set(), RENAMES = {};
 const jget = u => fetch(u, { cache: 'no-store' }).then(r => r.json()).catch(() => null);
-const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; })]);
-const isHidden = p => p.hidden === undefined ? HIDDEN.has(p.c) : !!p.hidden;
+const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./hiddenonly.json').then(m => { if (m) HIDEONLY = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; })]);
+const isHidden = p => p.hidden === undefined ? (HIDDEN.has(p.c) || HIDEONLY.has(p.c)) : !!p.hidden;
 const toDelete = p => isHidden(p) && p.hidden === undefined && HIDDEN.has(p.c);
 let CATMAP = {}; const READY2 = jget('./cats.json').then(m => { if (m) CATMAP = m; });
 const CATLIST = [['lav', 'LAV'], ['flask', 'Flask • مطارات'], ['hascevher', 'Hascevher'], ['porcelain', 'Porcelain • بورسلين'], ['tea', 'Tea Set • طقم شاي'], ['tray', 'Tray • صواني'], ['others', 'Others • أخرى']];
