@@ -45,17 +45,23 @@ export async function sendFile(blob, filename, mode) {
 export function scanner(onCode) {
   const m = X.modal(`<h3>Scan barcode</h3><video id="vd" playsinline muted style="width:100%;border-radius:12px;background:#000;max-height:50vh"></video>
     <div class="sub" id="sm">Starting camera…</div><button class="btn l" id="cl">Close</button>`);
-  let reader, stopped = false, last = '', lastT = 0;
+  let reader, stopped = false, last = '', lastT = 0, pend = '', pendN = 0;
   const stop = () => { stopped = true; try { reader && reader.reset(); } catch (e) {} m.remove(); };
   m.querySelector('#cl').onclick = stop;
   (async () => {
     try {
       await loadScript(ZXING);
-      reader = new ZXing.BrowserMultiFormatReader();
+      const hints = new Map(), F = ZXing.BarcodeFormat;
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      reader = new ZXing.BrowserMultiFormatReader(hints, 120);
       m.querySelector('#sm').textContent = 'Point the camera at the barcode';
       await reader.decodeFromVideoDevice(undefined, m.querySelector('#vd'), res => {
         if (stopped || !res) return;
         const t = res.getText(), now = Date.now();
+        // a code counts only when read twice in a row (filters one-frame misreads)
+        if (t !== pend) { pend = t; pendN = 1; return; }
+        if (++pendN < 2) return;
         if (t === last && now - lastT < 2500) return; last = t; lastT = now;
         const keep = onCode(t); if (keep === false) stop();
       });
