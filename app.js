@@ -14,6 +14,7 @@ if (!firebaseConfig) {
   throw new Error('no config');
 }
 
+import { initInvoices, invoiceHome } from './invoices.js';
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb), db = getFirestore(fb);
 const mail = u => u.trim().toLowerCase().replace(/[^a-z0-9]/g, '') + '@kitchenware.app';
@@ -21,6 +22,7 @@ const pw = pin => pin + '-kw';
 
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
+initInvoices({ db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f) });
 
 const ROLE_HOME = {
   admin: ['invoice', 'return', 'stock', 'statement', 'report', 'calendar'],
@@ -88,7 +90,7 @@ function top(title, back = true) {
 }
 function go(v, arg) {
   S.view = v; S.arg = arg;
-  const fn = { home, stock, statement, staff, comingsoon }[v] || comingsoon;
+  const fn = { home, stock, statement, staff, invoice: invoiceHome, comingsoon }[v] || comingsoon;
   fn();
   const bk = document.getElementById('bk'); if (bk) bk.onclick = () => go('home');
   const lo = document.getElementById('lo'); if (lo) lo.onclick = () => signOut(auth);
