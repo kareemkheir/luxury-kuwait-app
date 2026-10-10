@@ -47,3 +47,5 @@ label{font-size:14px;color:var(--m);font-weight:600}
 
 .pc{display:flex;gap:10px;align-items:center}.pcb{flex:1;min-width:0}
 img.pt{width:56px;height:72px;object-fit:contain;background:#fff;border-radius:8px;flex:none;cursor:zoom-in}
+
+.tabs.cats button{flex:none;padding:9px 12px;font-size:14px}
