@@ -30,9 +30,9 @@ const pw = pin => pin + '-kw';
 
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
-let IMGMAP = {}, HIDDEN = new Set(), HIDEONLY = new Set(), RENAMES = {};
+let IMGMAP = {}, HIDDEN = new Set(), HIDEONLY = new Set(), RENAMES = {}, ARFIX = {};
 const jget = u => fetch(u, { cache: 'no-store' }).then(r => r.json()).catch(() => null);
-const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./hiddenonly.json').then(m => { if (m) HIDEONLY = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; })]);
+const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./hiddenonly.json').then(m => { if (m) HIDEONLY = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; }), jget('./arfix.json').then(m => { if (m) ARFIX = m; })]);
 const isHidden = p => p.hidden === undefined ? (HIDDEN.has(p.c) || HIDEONLY.has(p.c)) : !!p.hidden;
 const toDelete = p => isHidden(p) && p.hidden === undefined && HIDDEN.has(p.c);
 let CATMAP = {}; const READY2 = jget('./cats.json').then(m => { if (m) CATMAP = m; });
@@ -145,7 +145,7 @@ async function loadProducts(force) {
   if (S.products && !force) return S.products;
   const q = await getDocs(collection(db, 'products'));
   await READY; await READY2;
-  S.products = q.docs.map(d => { const x = { id: d.id, ...d.data() }; if (RENAMES[x.c]) x.c = RENAMES[x.c]; return x; });
+  S.products = q.docs.map(d => { const x = { id: d.id, ...d.data() }; if (RENAMES[x.c]) x.c = RENAMES[x.c]; if (ARFIX[x.c] && !x.arEdited) x.ar = ARFIX[x.c]; return x; });
   return S.products;
 }
 async function loadBarcodes(force) {
