@@ -22,6 +22,7 @@ import { initInvoices, invoiceHome } from './invoices.js';
 import { initStatement, statementHome, chequesHome } from './statement.js';
 import { initActivity, getLoc } from './activity.js';
 import { initCalendar, calendarHome } from './calendar.js';
+import { initReport, reportHome } from './report.js';
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb), db = getFirestore(fb);
 const mail = u => u.trim().toLowerCase().replace(/[^a-z0-9]/g, '') + '@kitchenware.app';
@@ -30,7 +31,7 @@ const pw = pin => pin + '-kw';
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
 const CTX = { db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), editCustomer: (c, f) => editCustomer(c, f) };
-initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX);
+initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX); initReport(CTX);
 
 const ROLE_HOME = {
   admin: ['invoice', 'return', 'stock', 'statement', 'report', 'calendar'],
@@ -98,7 +99,7 @@ function top(title, back = true) {
 }
 function go(v, arg) {
   S.view = v; S.arg = arg;
-  const fn = { home, stock, statement: statementHome, cheques: chequesHome, calendar: calendarHome, staff, invoice: invoiceHome, comingsoon }[v] || comingsoon;
+  const fn = { home, stock, statement: statementHome, cheques: chequesHome, calendar: calendarHome, report: reportHome, staff, invoice: invoiceHome, comingsoon }[v] || comingsoon;
   fn();
   const bk = document.getElementById('bk'); if (bk) bk.onclick = () => go('home');
   const lo = document.getElementById('lo'); if (lo) lo.onclick = () => signOut(auth);
