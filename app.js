@@ -179,7 +179,7 @@ async function stock() {
     const shown = L.slice(0, 80);
     $app.innerHTML = top('Stock • المخزون') + `<div class="wrap">
       <input id="q" placeholder="Search item number, name or barcode…" value="${esc(q)}">
-      ${admin ? '<div class="row"><button class="btn l" id="xd">⬇ Export Excel</button><button class="btn l" id="xs">Share</button></div>' : ''}
+      ${admin ? '<div class="row"><button class="btn l" id="xd">⬇ Export Excel</button><button class="btn l" id="xs">Share</button></div><button class="btn l" id="up">⬆ Update stock from file</button>' : ''}
  <div class="tabs cats"><button data-k="all" class="${cat === 'all' ? 'on' : ''}">All</button>${CATLIST.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && p.q > 0 && catOf(p) === k).length}</button>`).join('')}</div>
       ${cat !== 'all' && SUBS[cat] ? `<div class="tabs cats sub"><button data-s="all" class="${sub === 'all' ? 'on' : ''}">All</button>${SUBS[cat].map(([k, n]) => `<button data-s="${k}" class="${sub === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && p.q > 0 && catOf(p) === cat && subOf(p) === k).length}</button>`).join('')}</div>` : ''}
       <div class="tabs"><button data-f="all" class="${filter === 'all' && !hiddenView ? 'on' : ''}">All ${VP.length}</button>
@@ -219,6 +219,7 @@ async function stock() {
     };
     if (admin) {
       const run = async mode => { try { const d = new Date(), n = `Stock ${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}.xlsx`; const by = {}; Object.keys(IB).forEach(k => by[k] = IB[k].map(b => b.code)); await sendFile(await buildStockExcel(P, by), n, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
+      document.getElementById('up').onclick = () => stockUpdate(() => { P = S.products; IB = invBarcodes(); draw(); });
       document.getElementById('xd').onclick = () => run('download'); document.getElementById('xs').onclick = () => run('share');
     }
     if (admin) $app.querySelectorAll('.card[data-id]').forEach(c => c.onclick = () => editProduct(P.find(p => p.id === c.dataset.id), () => { IB = invBarcodes(); draw(); }));
@@ -226,6 +227,41 @@ async function stock() {
   draw();
 }
 
+function stockUpdate(done) {
+  const m = modal(`<h3>Update stock from file</h3><div class="sub">Pick the stock file I prepared from your PDF (stock.json). You will see a summary before anything changes.</div>
+    <input id="f" type="file" accept=".json"><div id="rv"></div><button class="btn l" id="cl">Close</button>`);
+  m.querySelector('#cl').onclick = () => m.remove();
+  m.querySelector('#f').onchange = async e => {
+    const rv = m.querySelector('#rv'); rv.innerHTML = '<div class="sub">Reading…</div>';
+    try {
+      const F = JSON.parse(await e.target.files[0].text()); if (!Array.isArray(F) || !F.length || !('c' in F[0]) || !('q' in F[0])) throw new Error('bad');
+      const cur = await loadProducts(true), by = {}; cur.forEach(p => { by[p.id.toUpperCase()] = p; by[String(p.c).toUpperCase()] = p; });
+      const seen = new Set(), chg = [], nw = [], same = [];
+      F.forEach(r => { const k = String(r.c).trim().toUpperCase(), p = by[k]; if (p) { seen.add(p.id); const q = Math.round(+r.q || 0); (q !== p.q ? chg : same).push({ p, q, price: r.p }); } else nw.push(r); });
+      const miss = cur.filter(p => !seen.has(p.id) && p.q !== 0), up = chg.filter(x => x.price != null && Math.abs(+x.price - x.p.p) > 0.0005);
+      rv.innerHTML = `<div class="card"><div class="row"><span>Quantities that change</span><b>${chg.length}</b></div><div class="row"><span>Unchanged</span><b>${same.length}</b></div>
+        <div class="row"><span>New items (not in the app)</span><b>${nw.length}</b></div><div class="row"><span>In the app but not in the file</span><b>${miss.length}</b></div>
+        <div class="row"><span>Prices that differ</span><b>${F.filter(r => { const p = by[String(r.c).trim().toUpperCase()]; return p && r.p != null && Math.abs(+r.p - p.p) > 0.0005; }).length}</b></div></div>
+        <label><input type="checkbox" id="o1" checked style="width:auto"> Create the ${nw.length} new items</label>
+        <label><input type="checkbox" id="o2" style="width:auto"> Also update prices</label>
+        <label><input type="checkbox" id="o3" style="width:auto"> Set the ${miss.length} items missing from the file to 0</label>
+        ${chg.length ? `<div class="sub" style="margin-top:8px">Biggest changes: ${chg.slice().sort((x, y) => Math.abs(y.q - y.p.q) - Math.abs(x.q - x.p.q)).slice(0, 5).map(x => `${esc(x.p.c)} ${x.p.q}→${x.q}`).join(' • ')}</div>` : ''}
+        <button class="btn g" id="ap">Apply</button>`;
+      rv.querySelector('#ap').onclick = async () => {
+        const b = rv.querySelector('#ap'); b.disabled = true; b.textContent = 'Updating… please wait';
+        const o1 = rv.querySelector('#o1').checked, o2 = rv.querySelector('#o2').checked, o3 = rv.querySelector('#o3').checked, ops = [];
+        chg.forEach(x => ops.push(['u', x.p.id, { q: x.q }])); same.forEach(x => { if (o2 && x.price != null && Math.abs(+x.price - x.p.p) > 0.0005) ops.push(['u', x.p.id, { p: +x.price }]); });
+        if (o2) chg.forEach(x => { if (x.price != null && Math.abs(+x.price - x.p.p) > 0.0005) ops.find(o => o[1] === x.p.id)[2].p = +x.price; });
+        if (o1) nw.forEach(r => ops.push(['s', String(r.c).trim(), { c: String(r.c).trim(), ar: r.ar || '', en: r.en || '', pk: r.pk || 1, q: Math.round(+r.q || 0), p: +r.p || 0 }]));
+        if (o3) miss.forEach(p => ops.push(['u', p.id, { q: 0 }]));
+        try {
+          for (let i = 0; i < ops.length; i += 400) { const bt = writeBatch(db); ops.slice(i, i + 400).forEach(([t, id, d]) => t === 'u' ? bt.update(doc(db, 'products', id), d) : bt.set(doc(db, 'products', id), d)); await bt.commit(); }
+          S.products = null; await loadProducts(true); m.remove(); toast(`Stock updated (${ops.length} changes)`); done();
+        } catch (er) { console.error(er); toast('Update failed — please try again'); b.disabled = false; b.textContent = 'Apply'; }
+      };
+    } catch (er) { rv.innerHTML = '<div class="card">This is not a stock file. Use the stock.json I prepared.</div>'; }
+  };
+}
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div>${html}</div>`;
   m.onclick = e => { if (e.target === m) m.remove(); };
