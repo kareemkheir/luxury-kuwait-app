@@ -171,17 +171,17 @@ async function stock() {
   await loadConfig(); let P = await loadProducts(); await loadBarcodes(); let hiddenView = false; let IB = invBarcodes();
   let filter = 'all', q = '', cat = 'all', sub = 'all';
   const draw = () => {
-    const VP = P.filter(p => !isHidden(p)), nh = P.length - VP.length, low = VP.filter(p => p.q > 0 && p.q <= LOW()).length, zero = VP.filter(p => p.q <= 0).length;
+    const VP = P.filter(p => !isHidden(p) && p.q > 0), nh = P.filter(isHidden).length, nz = P.filter(p => !isHidden(p) && p.q <= 0).length, low = VP.filter(p => p.q > 0 && p.q <= LOW()).length, zero = nz;
     const t = q.trim().toLowerCase();
-    let L = P.filter(p => (hiddenView ? isHidden(p) : !isHidden(p)) && (cat === 'all' || catOf(p) === cat) && (sub === 'all' || subOf(p) === sub) && (filter === 'all' || (filter === 'low' && p.q > 0 && p.q <= LOW()) || (filter === 'zero' && p.q <= 0)) &&
+    let L = P.filter(p => (hiddenView ? isHidden(p) : !isHidden(p)) && (cat === 'all' || catOf(p) === cat) && (sub === 'all' || subOf(p) === sub) && (filter === 'all' ? (p.q > 0 || hiddenView || !!t) : (filter === 'low' && p.q > 0 && p.q <= LOW()) || (filter === 'zero' && p.q <= 0)) &&
       (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || (IB[p.c] || []).some(b => b.code.toLowerCase().includes(t))));
     if (cat !== 'all' && SUBS[cat]) L = L.slice().sort((x, y) => subRank(x) - subRank(y) || x.c.localeCompare(y.c));
     const shown = L.slice(0, 80);
     $app.innerHTML = top('Stock • المخزون') + `<div class="wrap">
       <input id="q" placeholder="Search item number, name or barcode…" value="${esc(q)}">
       ${admin ? '<div class="row"><button class="btn l" id="xd">⬇ Export Excel</button><button class="btn l" id="xs">Share</button></div>' : ''}
- <div class="tabs cats"><button data-k="all" class="${cat === 'all' ? 'on' : ''}">All</button>${CATLIST.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n} ${P.filter(p => catOf(p) === k).length}</button>`).join('')}</div>
-      ${cat !== 'all' && SUBS[cat] ? `<div class="tabs cats sub"><button data-s="all" class="${sub === 'all' ? 'on' : ''}">All</button>${SUBS[cat].map(([k, n]) => `<button data-s="${k}" class="${sub === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && catOf(p) === cat && subOf(p) === k).length}</button>`).join('')}</div>` : ''}
+ <div class="tabs cats"><button data-k="all" class="${cat === 'all' ? 'on' : ''}">All</button>${CATLIST.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && p.q > 0 && catOf(p) === k).length}</button>`).join('')}</div>
+      ${cat !== 'all' && SUBS[cat] ? `<div class="tabs cats sub"><button data-s="all" class="${sub === 'all' ? 'on' : ''}">All</button>${SUBS[cat].map(([k, n]) => `<button data-s="${k}" class="${sub === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && p.q > 0 && catOf(p) === cat && subOf(p) === k).length}</button>`).join('')}</div>` : ''}
       <div class="tabs"><button data-f="all" class="${filter === 'all' && !hiddenView ? 'on' : ''}">All ${VP.length}</button>
       <button data-f="low" class="${filter === 'low' ? 'on' : ''}">Low ${low}</button>
       <button data-f="zero" class="${filter === 'zero' ? 'on' : ''}">Out ${zero}</button>${admin && nh ? `<button data-f="hid" class="${hiddenView ? 'on' : ''}">Hidden ${nh}</button>` : ''}</div>
