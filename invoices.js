@@ -98,17 +98,50 @@ export function scanner(opts) {
       const hints = new Map(), F = ZXing.BarcodeFormat;
       hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39]);
       hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-      reader = new ZXing.BrowserMultiFormatReader(hints, 80);
+      const mfr = new ZXing.MultiFormatReader(); mfr.setHints(hints);
       const v = $$('#vd');
       say('Point at the barcode or the printed item number');
-      reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } }, v, res => {
-        if (stopped || paused || !res) return;
-        const t = res.getText(), now = Date.now(), f = res.getBarcodeFormat();
-        const strong = f === F.EAN_13 || f === F.EAN_8 || f === F.UPC_A || f === F.UPC_E;   // these have a built-in check digit
-        if (!strong) { if (t !== pend) { pend = t; pendN = 1; return; } if (++pendN < 2) return; }
-        if (t === last && now - lastT < 1800) { lastT = now; return; } last = t; lastT = now;
-        handle(opts.onCode(t));
-      }).catch(() => {});
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      v.srcObject = stream; await v.play();
+      reader = { reset: () => stream.getTracks().forEach(t => t.stop()) };
+      const BD = window.BarcodeDetector ? new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'] }) : null;
+      const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+      // Shiny packaging reflects light when the phone is straight on, which blinds the reader. So every frame is tried several ways:
+      // as is, with the bright glare flattened, and with the contrast stretched.
+      const enhance = mode => {
+        const d = cx.getImageData(0, 0, cv.width, cv.height), p = d.data, n = p.length / 4, hist = new Uint32Array(256);
+        for (let i = 0; i < p.length; i += 4) { const g = (p[i] * 0.3 + p[i + 1] * 0.59 + p[i + 2] * 0.11) | 0; p[i] = g; hist[g]++; }
+        let lo = 0, hi = 255, acc = 0; while (lo < 255 && (acc += hist[lo]) < n * 0.02) lo++; acc = 0; while (hi > 0 && (acc += hist[hi]) < n * 0.02) hi--;
+        const cap = mode === 'glare' ? Math.max(lo + 20, hi - (hi - lo) * 0.25) : hi, r = Math.max(20, cap - lo);
+        for (let i = 0; i < p.length; i += 4) { let g = Math.min(255, Math.max(0, ((Math.min(p[i], cap) - lo) * 255 / r) | 0)); p[i] = p[i + 1] = p[i + 2] = g; p[i + 3] = 255; }
+        cx.putImageData(d, 0, 0);
+      };
+      const tryDecode = () => { for (const B of [ZXing.HybridBinarizer, ZXing.GlobalHistogramBinarizer]) { try { return mfr.decodeWithState(new ZXing.BinaryBitmap(new B(new ZXing.HTMLCanvasElementLuminanceSource(cv)))); } catch (e) {} } return null; };
+      let frame = 0;
+      const scan = async () => {
+        while (!stopped) {
+          await new Promise(r => setTimeout(r, 70));
+          if (paused || !v.videoWidth) continue;
+          frame++;
+          const w = v.videoWidth, h = v.videoHeight, cw = w, ch = h * 0.7, k = Math.min(1, 1280 / cw);
+          cv.width = Math.round(cw * k); cv.height = Math.round(ch * k);
+          cx.drawImage(v, 0, (h - ch) / 2, cw, ch, 0, 0, cv.width, cv.height);
+          let t = null, strong = false;
+          if (BD) { try { const r = await BD.detect(cv); if (r.length) { t = r[0].rawValue; strong = /^(ean_13|ean_8|upc_a|upc_e)$/.test(r[0].format); } } catch (e) {} }
+          const modes = [null, 'glare', 'stretch'];
+          for (const m of (t ? [] : modes)) {
+            if (m) enhance(m);
+            const r = tryDecode(); if (r) { t = r.getText(); const f = r.getBarcodeFormat(), F2 = ZXing.BarcodeFormat; strong = f === F2.EAN_13 || f === F2.EAN_8 || f === F2.UPC_A || f === F2.UPC_E; break; }
+            if (m !== 'stretch') cx.drawImage(v, 0, (h - ch) / 2, cw, ch, 0, 0, cv.width, cv.height);
+          }
+          if (!t) continue;
+          const now = Date.now();
+          if (!strong) { if (t !== pend) { pend = t; pendN = 1; continue; } if (++pendN < 2) continue; }
+          if (t === last && now - lastT < 1800) { lastT = now; continue; } last = t; lastT = now;
+          handle(opts.onCode(t));
+        }
+      };
+      scan();
       // light + zoom when the phone supports them
       setTimeout(() => {
         try {
