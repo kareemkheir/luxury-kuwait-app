@@ -243,7 +243,7 @@ function stockUpdate(done) {
         <div class="row"><span>New items (not in the app)</span><b>${nw.length}</b></div><div class="row"><span>In the app but not in the file</span><b>${miss.length}</b></div>
         <div class="row"><span>Prices that differ</span><b>${F.filter(r => { const p = by[String(r.c).trim().toUpperCase()]; return p && r.p != null && Math.abs(+r.p - p.p) > 0.0005; }).length}</b></div></div>
         <label><input type="checkbox" id="o1" checked style="width:auto"> Create the ${nw.length} new items</label>
-        <label><input type="checkbox" id="o2" style="width:auto"> Also update prices</label>
+        <label><input type="checkbox" id="o2" checked style="width:auto"> Also update prices</label>
         <label><input type="checkbox" id="o3" style="width:auto"> Set the ${miss.length} items missing from the file to 0</label>
         ${chg.length ? `<div class="sub" style="margin-top:8px">Biggest changes: ${chg.slice().sort((x, y) => Math.abs(y.q - y.p.q) - Math.abs(x.q - x.p.q)).slice(0, 5).map(x => `${esc(x.p.c)} ${x.p.q}→${x.q}`).join(' • ')}</div>` : ''}
         <button class="btn g" id="ap">Apply</button>`;
