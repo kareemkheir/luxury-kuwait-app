@@ -49,3 +49,4 @@ label{font-size:14px;color:var(--m);font-weight:600}
 img.pt{width:56px;height:72px;object-fit:contain;background:#fff;border-radius:8px;flex:none;cursor:zoom-in}
 
 .tabs.cats button{flex:none;padding:9px 12px;font-size:14px}
+.tabs.cats.sub button{background:#f1f4fa;font-size:13px;padding:7px 11px}.tabs.cats.sub button.on{background:#3d5a8f;color:#fff}

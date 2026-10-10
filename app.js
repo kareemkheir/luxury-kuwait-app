@@ -36,10 +36,16 @@ const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; 
 const isHidden = p => p.hidden === undefined ? HIDDEN.has(p.c) : !!p.hidden;
 let CATMAP = {}; const READY2 = jget('./cats.json').then(m => { if (m) CATMAP = m; });
 const CATLIST = [['lav', 'LAV'], ['flask', 'Flask • مطارات'], ['hascevher', 'Hascevher'], ['porcelain', 'Porcelain • بورسلين'], ['tea', 'Tea Set • طقم شاي'], ['tray', 'Tray • صواني'], ['others', 'Others • أخرى']];
+let SUBMAP = {}; jget('./subcats.json').then(m => { if (m) SUBMAP = m; });
+const SUBS = { flask: [['sun', 'SUN'], ['shimizu', 'SHIMIZU'], ['fg', 'FG'], ['other', 'Others']],
+  hascevher: [['pots', 'قدور'], ['fry', 'مقالي'], ['other', 'Others']],
+  lav: [['tumbler', 'تمبلر'], ['stem', 'كاسات بقاعدة'], ['tea', 'استكانة / صحن'], ['mug', 'ماج'], ['dolka', 'دولكة'], ['other', 'Others']] };
+const subOf = p => p.sub || SUBMAP[p.c] || 'other';
+const subRank = p => { const L = SUBS[catOf(p)]; return L ? Math.max(0, L.findIndex(s => s[0] === subOf(p))) : 0; };
 const catOf = p => p.cat || CATMAP[p.c] || 'others';
 const pimg = (c, big) => IMGMAP[c] ? `<img class="pt${big ? ' big' : ''}" loading="lazy" src="./img/${IMGMAP[c]}" data-full="./img/${IMGMAP[c]}" alt="">` : '';
 document.addEventListener('click', e => { const t = e.target; if (t.classList && t.classList.contains('pt')) { e.stopPropagation(); e.preventDefault(); const m = modal(`<img src="${t.dataset.full}" style="width:100%;max-height:70vh;object-fit:contain;background:#fff;border-radius:12px"><button class="btn l" id="zc">Close</button>`); m.querySelector('#zc').onclick = () => m.remove(); } }, true);
-const CTX = { isHidden: p => isHidden(p), catOf: p => catOf(p), CATLIST, img: (c, b) => pimg(c, b), db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), loadBarcodes: f => loadBarcodes(f), editCustomer: (c, f) => editCustomer(c, f) };
+const CTX = { SUBS, subOf: p => subOf(p), subRank: p => subRank(p), isHidden: p => isHidden(p), catOf: p => catOf(p), CATLIST, img: (c, b) => pimg(c, b), db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), loadBarcodes: f => loadBarcodes(f), editCustomer: (c, f) => editCustomer(c, f) };
 initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX); initReport(CTX);
 
 const ROLE_HOME = {
@@ -163,17 +169,19 @@ async function stock() {
   $app.innerHTML = top('Stock • المخزون') + '<div class="wrap"><div class="sub">Loading…</div></div>';
   document.getElementById('bk').onclick = () => go('home');
   await loadConfig(); let P = await loadProducts(); await loadBarcodes(); let hiddenView = false; let IB = invBarcodes();
-  let filter = 'all', q = '', cat = 'all';
+  let filter = 'all', q = '', cat = 'all', sub = 'all';
   const draw = () => {
     const VP = P.filter(p => !isHidden(p)), nh = P.length - VP.length, low = VP.filter(p => p.q > 0 && p.q <= LOW()).length, zero = VP.filter(p => p.q <= 0).length;
     const t = q.trim().toLowerCase();
-    let L = P.filter(p => (hiddenView ? isHidden(p) : !isHidden(p)) && (cat === 'all' || catOf(p) === cat) && (filter === 'all' || (filter === 'low' && p.q > 0 && p.q <= LOW()) || (filter === 'zero' && p.q <= 0)) &&
+    let L = P.filter(p => (hiddenView ? isHidden(p) : !isHidden(p)) && (cat === 'all' || catOf(p) === cat) && (sub === 'all' || subOf(p) === sub) && (filter === 'all' || (filter === 'low' && p.q > 0 && p.q <= LOW()) || (filter === 'zero' && p.q <= 0)) &&
       (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || (IB[p.c] || []).some(b => b.code.toLowerCase().includes(t))));
+    if (cat !== 'all' && SUBS[cat]) L = L.slice().sort((x, y) => subRank(x) - subRank(y) || x.c.localeCompare(y.c));
     const shown = L.slice(0, 80);
     $app.innerHTML = top('Stock • المخزون') + `<div class="wrap">
       <input id="q" placeholder="Search item number, name or barcode…" value="${esc(q)}">
       ${admin ? '<div class="row"><button class="btn l" id="xd">⬇ Export Excel</button><button class="btn l" id="xs">Share</button></div>' : ''}
  <div class="tabs cats"><button data-k="all" class="${cat === 'all' ? 'on' : ''}">All</button>${CATLIST.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n} ${P.filter(p => catOf(p) === k).length}</button>`).join('')}</div>
+      ${cat !== 'all' && SUBS[cat] ? `<div class="tabs cats sub"><button data-s="all" class="${sub === 'all' ? 'on' : ''}">All</button>${SUBS[cat].map(([k, n]) => `<button data-s="${k}" class="${sub === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && catOf(p) === cat && subOf(p) === k).length}</button>`).join('')}</div>` : ''}
       <div class="tabs"><button data-f="all" class="${filter === 'all' && !hiddenView ? 'on' : ''}">All ${VP.length}</button>
       <button data-f="low" class="${filter === 'low' ? 'on' : ''}">Low ${low}</button>
       <button data-f="zero" class="${filter === 'zero' ? 'on' : ''}">Out ${zero}</button>${admin && nh ? `<button data-f="hid" class="${hiddenView ? 'on' : ''}">Hidden ${nh}</button>` : ''}</div>
@@ -187,7 +195,8 @@ async function stock() {
     document.getElementById('bk').onclick = () => go('home');
     const qi = document.getElementById('q'); qi.oninput = e => { q = e.target.value; draw(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(q.length, q.length); };
     $app.querySelectorAll('.tabs:not(.cats) button').forEach(b => b.onclick = () => { if (b.dataset.f === 'hid') { hiddenView = true; filter = 'all'; } else { hiddenView = false; filter = b.dataset.f; } draw(); });
-    $app.querySelectorAll('.cats button').forEach(b => b.onclick = () => { cat = b.dataset.k; draw(); });
+    $app.querySelectorAll('.cats:not(.sub) button').forEach(b => b.onclick = () => { cat = b.dataset.k; sub = 'all'; draw(); });
+    $app.querySelectorAll('.cats.sub button').forEach(b => b.onclick = () => { sub = b.dataset.s; draw(); });
     const dh = document.getElementById('dh');
     if (dh) dh.onclick = async () => {
       const H = P.filter(isHidden), pcs = H.reduce((s, p) => s + Math.max(0, p.q), 0);
@@ -231,6 +240,7 @@ function editProduct(p, after) {
     <label>Arabic name</label><input id="ea" class="ar" value="${esc(p.ar)}">
     <button class="btn l" id="hd">${isHidden(p) ? '👁 Show this item again' : '🙈 Hide this item'}</button>
     <label>Category • الفئة</label><select id="ec">${CATLIST.map(([k, n]) => `<option value="${k}" ${catOf(p) === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    ${SUBS[catOf(p)] ? `<label>Sub-category</label><select id="es">${SUBS[catOf(p)].map(([k, n]) => `<option value="${k}" ${subOf(p) === k ? 'selected' : ''}>${n}</option>`).join('')}</select>` : ''}
     <label>Barcodes</label><div id="bl"></div>
     <div class="row"><input id="nb" placeholder="Add barcode number"><button class="btn l" id="ab">Add</button></div>
     <button class="btn g" id="sv">Save</button><button class="btn l" id="cl">Close</button>`);
@@ -243,7 +253,7 @@ function editProduct(p, after) {
   m.querySelector('#cl').onclick = () => m.remove();
   m.querySelector('#hd').onclick = async () => { const h = !isHidden(p); try { await updateDoc(doc(db, 'products', p.id), { hidden: h }); p.hidden = h; m.remove(); toast(h ? 'Hidden' : 'Visible again'); after(); } catch (e) { toast('Could not save'); } };
   m.querySelector('#sv').onclick = async () => {
-    const v = { q: Math.floor(+m.querySelector('#eq').value || 0), p: +m.querySelector('#ep').value || 0, pk: Math.max(1, +m.querySelector('#ek').value || 1), en: m.querySelector('#en').value, ar: m.querySelector('#ea').value, cat: m.querySelector('#ec').value };
+    const v = { q: Math.floor(+m.querySelector('#eq').value || 0), p: +m.querySelector('#ep').value || 0, pk: Math.max(1, +m.querySelector('#ek').value || 1), en: m.querySelector('#en').value, ar: m.querySelector('#ea').value, cat: m.querySelector('#ec').value }; if (m.querySelector('#es')) v.sub = m.querySelector('#es').value; else if (v.cat !== catOf(p)) v.sub = 'other';
     try { await updateDoc(doc(db, 'products', p.id), v); Object.assign(p, v); m.remove(); toast('Saved'); after(); } catch (e) { toast('Could not save'); }
   };
 }
