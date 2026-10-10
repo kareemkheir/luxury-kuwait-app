@@ -71,6 +71,38 @@ export function scanner(onCode) {
   return stop;
 }
 
+
+/* ---------- Read a printed item number from a photo (OCR) ---------- */
+const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+let ocrWorker;
+async function prepImage(file) {
+  const img = await createImageBitmap(file), k = Math.min(2200 / Math.max(img.width, img.height), 2.5);
+  const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+  const x = c.getContext('2d'); x.drawImage(img, 0, 0, c.width, c.height);
+  const d = x.getImageData(0, 0, c.width, c.height), g = new Uint8Array(c.width * c.height); let lo = 255, hi = 0;
+  for (let i = 0, j = 0; i < d.data.length; i += 4, j++) { const v = (d.data[i] * 0.3 + d.data[i + 1] * 0.59 + d.data[i + 2] * 0.11) | 0; g[j] = v; if (v < lo) lo = v; if (v > hi) hi = v; }
+  const r = Math.max(1, hi - lo);
+  for (let i = 0, j = 0; i < d.data.length; i += 4, j++) { const v = Math.min(255, Math.max(0, ((g[j] - lo) * 255 / r) | 0)); d.data[i] = d.data[i + 1] = d.data[i + 2] = v; }
+  x.putImageData(d, 0, 0); return c;
+}
+async function ocrText(file) {
+  await loadScript(TESS);
+  ocrWorker ||= await Tesseract.createWorker('eng');
+  await ocrWorker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-', tessedit_pageseg_mode: '11' });
+  return (await ocrWorker.recognize(await prepImage(file))).data.text;
+}
+// Compare codes ignoring look-alike letters/digits (O/0, I/L/1, S/5, B/8, Z/2) because OCR confuses them.
+const canon = s => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
+export function matchText(text, products) {
+  const idx = new Map(); products.forEach(p => { const k = canon(p.c); if (!idx.has(k)) idx.set(k, []); idx.get(k).push(p); });
+  const toks = String(text).split(/[^A-Za-z0-9-]+/).filter(t => t.length >= 3), cands = [];
+  toks.forEach((t, i) => { cands.push(t); if (i + 1 < toks.length) cands.push(t + toks[i + 1]); });
+  const hits = new Map();
+  cands.forEach(t => { const k = canon(t); if (idx.has(k)) idx.get(k).forEach(p => { const exact = p.c.toUpperCase().replace(/[^A-Z0-9]/g, '') === t.toUpperCase().replace(/[^A-Z0-9]/g, ''); const o = hits.get(p.c); if (!o || exact) hits.set(p.c, { p, exact }); }); });
+  const all = [...hits.values()], ex = all.filter(h => h.exact);
+  return (ex.length ? ex : all).map(h => h.p);
+}
+
 /* ---------- New invoice / Return (same screen, two kinds) ---------- */
 const KEYS = { invoice: ['cart', 'kw_cart'], return: ['rcart', 'kw_rcart'] };
 function saveCart(kind = 'invoice') { const [f, k] = KEYS[kind]; try { localStorage.setItem(k, JSON.stringify(X.S[f] || null)); } catch (e) {} }
@@ -127,7 +159,7 @@ async function cartView(kind) {
     $('#app').innerHTML = top((R ? 'Return • ' : 'Invoice • ') + esc(cart.cust.en)) + `<div class="wrap">
       ${cart.cust.disc ? `<div class="pill g" style="margin-bottom:8px">Customer discount ${cart.cust.disc}%</div>` : ''}
       <div class="grid" style="margin-bottom:10px"><button class="btn" id="sc">📷 Scan</button><button class="btn l" id="se">🔎 Search item</button></div>
-      <button class="btn l" id="ph" style="margin-top:0">🖼 Read barcode from photo</button><input type="file" id="pf" accept="image/*" multiple style="display:none">
+      <button class="btn l" id="ph" style="margin-top:0">${R ? '🖼 Photo: barcode or printed item number' : '🖼 Read barcode from photo'}</button><input type="file" id="pf" accept="image/*" multiple style="display:none">
       ${cart.items.length === 0 ? '<div class="card sub">No items yet. Scan a barcode or search for an item.</div>' : ''}
       ${cart.items.map((it, i) => `<div class="card"><div class="row"><b>${esc(it.c)}</b><button class="pill r" data-rm="${i}" style="border:0">Remove</button></div>
         <div class="sub">${esc(it.en)}</div><div class="ar sub">${esc(it.ar)}</div>
@@ -163,16 +195,38 @@ async function cartView(kind) {
     $('#cr').onclick = R ? createReturn : create;
     $('#ph').onclick = () => $('#pf').click();
     $('#pf').onchange = async e => {
-      const fs = [...e.target.files]; if (!fs.length) return;
-      let ok = 0, bad = 0, unknown = null; toast('Reading…');
+      const fs = [...e.target.files]; e.target.value = ''; if (!fs.length) return;
+      let ok = 0, bad = 0, unknown = null;
       for (const f of fs) {
-        try { const code = await decodeImage(f); if (by(code)) { const r = addItem(code); if (r.startsWith('Added')) ok++; else toast(r); } else unknown ||= code; }
-        catch (err) { bad++; }
+        toast('Reading…'); let code = null;
+        try { code = await decodeImage(f); } catch (err) {}
+        if (code && by(code)) { const r = addItem(code); if (r.startsWith('Added')) ok++; else toast(r); continue; }
+        if (R) {   // returns: also try to read the printed item number
+          try {
+            toast('Reading the printed number… (first time takes a few seconds)');
+            const hits = matchText(await ocrText(f), S.products);
+            if (hits.length === 1) {
+              const p = hits[0]; addItem(p.c); ok++;
+              if (code) { try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: p.c, by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = p.c; } catch (e2) {} }
+              continue;
+            }
+            if (hits.length > 1) { pickOne(hits, code); continue; }
+          } catch (err) { console.error(err); }
+        }
+        if (code) unknown ||= code; else bad++;
       }
-      toast(`${ok} item(s) added${bad ? ` • no barcode found in ${bad} photo(s) — try closer, or use Search` : ''}`);
+      toast(`${ok} item(s) added${bad ? ` • nothing readable in ${bad} photo(s) — try a closer, sharper photo, or use Search` : ''}`);
       if (unknown) linkBarcode(unknown);
     };
   };
+  function pickOne(list, code) {
+    const m = X.modal(`<h3>Which item is it?</h3><div class="sub">The photo matched more than one item. Tap the right one.</div>${list.map(p => `<div class="card" data-c="${esc(p.c)}"><b>${esc(p.c)}</b><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div>`).join('')}<button class="btn l" id="cl">Close</button>`);
+    m.querySelector('#cl').onclick = () => m.remove();
+    m.querySelectorAll('[data-c]').forEach(c => c.onclick = async () => {
+      addItem(c.dataset.c); m.remove();
+      if (code) { try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: c.dataset.c, by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = c.dataset.c; } catch (e2) {} }
+    });
+  }
   function linkBarcode(code) {
     const m = X.modal(`<h3>Barcode not found</h3><div class="card"><div class="sub">The camera read this number:</div><b style="font-size:20px;word-break:break-all">${esc(code)}</b></div>
       <div class="sub">Search for the item once and tap it. Next time this barcode adds it automatically.</div>
