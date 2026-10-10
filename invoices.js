@@ -369,13 +369,14 @@ async function cartView(kind) {
     saveCart(kind); draw(); return `Added ${p.c}`;
   }
   function searchItem() {
+    const PV = P.filter(p => !X.isHidden(p));
     let cat = 'all', t = '', lim = 40;
     const m = X.modal(`<h3>Add items</h3><input id="si" placeholder="Item number or name…" autofocus>
       <div class="tabs cats" id="ct"></div><div id="sr"></div><button class="btn g" id="cl">Done</button>`);
     const kinds = [['all', 'All'], ...X.CATLIST];
     const drawCats = () => { m.querySelector('#ct').innerHTML = kinds.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n}</button>`).join(''); m.querySelectorAll('#ct button').forEach(b => b.onclick = () => { cat = b.dataset.k; lim = 40; drawCats(); drawList(); }); };
     const drawList = () => {
-      const L = P.filter(p => (cat === 'all' || X.catOf(p) === cat) && (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || Object.keys(S.barcodes || {}).some(b => S.barcodes[b] === p.c && (((S.barcodeCodes || {})[b] || b).toLowerCase().includes(t)))));
+      const L = PV.filter(p => (cat === 'all' || X.catOf(p) === cat) && (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || Object.keys(S.barcodes || {}).some(b => S.barcodes[b] === p.c && (((S.barcodeCodes || {})[b] || b).toLowerCase().includes(t)))));
       if (cat === 'all' && t.length < 2) { m.querySelector('#sr').innerHTML = '<div class="sub">Type to search, or pick a category to browse it.</div>'; return; }
       m.querySelector('#sr').innerHTML = L.slice(0, lim).map(p => { const n = (cart.items.find(i => i.c === p.c) || {}).q || 0; return `<div class="card pc" data-c="${esc(p.c)}">${X.img(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b><span>${n ? `<span class="pill o">in cart ${n}</span> ` : ''}<span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div></div>`; }).join('') + (L.length > lim ? `<button class="btn l" id="mr">Show more (${L.length - lim})</button>` : '') + (L.length === 0 ? '<div class="card">No items found.</div>' : '');
       m.querySelectorAll('[data-c]').forEach(c => c.onclick = () => { const r = addItem(c.dataset.c); toast(r); if (r.startsWith('Added')) { const y = m.querySelector('div').scrollTop; drawList(); m.querySelector('div').scrollTop = y; } });

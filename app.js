@@ -30,13 +30,16 @@ const pw = pin => pin + '-kw';
 
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
-let IMGMAP = {}; fetch('./imgmap.json', { cache: 'no-store' }).then(r => r.json()).then(m => { IMGMAP = m; }).catch(() => {});
-let CATMAP = {}; fetch('./cats.json', { cache: 'no-store' }).then(r => r.json()).then(m => { CATMAP = m; }).catch(() => {});
+let IMGMAP = {}, HIDDEN = new Set(), RENAMES = {};
+const jget = u => fetch(u, { cache: 'no-store' }).then(r => r.json()).catch(() => null);
+const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; })]);
+const isHidden = p => p.hidden === undefined ? HIDDEN.has(p.c) : !!p.hidden;
+let CATMAP = {}; const READY2 = jget('./cats.json').then(m => { if (m) CATMAP = m; });
 const CATLIST = [['lav', 'LAV'], ['flask', 'Flask • مطارات'], ['hascevher', 'Hascevher'], ['porcelain', 'Porcelain • بورسلين'], ['tea', 'Tea Set • طقم شاي'], ['tray', 'Tray • صواني'], ['others', 'Others • أخرى']];
 const catOf = p => p.cat || CATMAP[p.c] || 'others';
 const pimg = (c, big) => IMGMAP[c] ? `<img class="pt${big ? ' big' : ''}" loading="lazy" src="./img/${IMGMAP[c]}" data-full="./img/${IMGMAP[c]}" alt="">` : '';
 document.addEventListener('click', e => { const t = e.target; if (t.classList && t.classList.contains('pt')) { e.stopPropagation(); e.preventDefault(); const m = modal(`<img src="${t.dataset.full}" style="width:100%;max-height:70vh;object-fit:contain;background:#fff;border-radius:12px"><button class="btn l" id="zc">Close</button>`); m.querySelector('#zc').onclick = () => m.remove(); } }, true);
-const CTX = { catOf: p => catOf(p), CATLIST, img: (c, b) => pimg(c, b), db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), loadBarcodes: f => loadBarcodes(f), editCustomer: (c, f) => editCustomer(c, f) };
+const CTX = { isHidden: p => isHidden(p), catOf: p => catOf(p), CATLIST, img: (c, b) => pimg(c, b), db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), loadBarcodes: f => loadBarcodes(f), editCustomer: (c, f) => editCustomer(c, f) };
 initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX); initReport(CTX);
 
 const ROLE_HOME = {
@@ -134,7 +137,8 @@ function comingsoon() {
 async function loadProducts(force) {
   if (S.products && !force) return S.products;
   const q = await getDocs(collection(db, 'products'));
-  S.products = q.docs.map(d => ({ id: d.id, ...d.data() }));
+  await READY; await READY2;
+  S.products = q.docs.map(d => { const x = { id: d.id, ...d.data() }; if (RENAMES[x.c]) x.c = RENAMES[x.c]; return x; });
   return S.products;
 }
 async function loadBarcodes(force) {
@@ -158,21 +162,21 @@ async function stock() {
   const admin = S.user.role === 'admin';
   $app.innerHTML = top('Stock • المخزون') + '<div class="wrap"><div class="sub">Loading…</div></div>';
   document.getElementById('bk').onclick = () => go('home');
-  await loadConfig(); let P = await loadProducts(); await loadBarcodes(); let IB = invBarcodes();
+  await loadConfig(); let P = await loadProducts(); await loadBarcodes(); let hiddenView = false; let IB = invBarcodes();
   let filter = 'all', q = '', cat = 'all';
   const draw = () => {
-    const low = P.filter(p => p.q > 0 && p.q <= LOW()).length, zero = P.filter(p => p.q <= 0).length;
+    const VP = P.filter(p => !isHidden(p)), nh = P.length - VP.length, low = VP.filter(p => p.q > 0 && p.q <= LOW()).length, zero = VP.filter(p => p.q <= 0).length;
     const t = q.trim().toLowerCase();
-    let L = P.filter(p => (cat === 'all' || catOf(p) === cat) && (filter === 'all' || (filter === 'low' && p.q > 0 && p.q <= LOW()) || (filter === 'zero' && p.q <= 0)) &&
+    let L = P.filter(p => (hiddenView ? isHidden(p) : !isHidden(p)) && (cat === 'all' || catOf(p) === cat) && (filter === 'all' || (filter === 'low' && p.q > 0 && p.q <= LOW()) || (filter === 'zero' && p.q <= 0)) &&
       (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || (IB[p.c] || []).some(b => b.code.toLowerCase().includes(t))));
     const shown = L.slice(0, 80);
     $app.innerHTML = top('Stock • المخزون') + `<div class="wrap">
       <input id="q" placeholder="Search item number, name or barcode…" value="${esc(q)}">
       ${admin ? '<div class="row"><button class="btn l" id="xd">⬇ Export Excel</button><button class="btn l" id="xs">Share</button></div>' : ''}
  <div class="tabs cats"><button data-k="all" class="${cat === 'all' ? 'on' : ''}">All</button>${CATLIST.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n} ${P.filter(p => catOf(p) === k).length}</button>`).join('')}</div>
-      <div class="tabs"><button data-f="all" class="${filter === 'all' ? 'on' : ''}">All ${P.length}</button>
+      <div class="tabs"><button data-f="all" class="${filter === 'all' && !hiddenView ? 'on' : ''}">All ${VP.length}</button>
       <button data-f="low" class="${filter === 'low' ? 'on' : ''}">Low ${low}</button>
-      <button data-f="zero" class="${filter === 'zero' ? 'on' : ''}">Out ${zero}</button></div>
+      <button data-f="zero" class="${filter === 'zero' ? 'on' : ''}">Out ${zero}</button>${admin && nh ? `<button data-f="hid" class="${hiddenView ? 'on' : ''}">Hidden ${nh}</button>` : ''}</div>
       ${shown.map(p => `<div class="card pc" data-id="${esc(p.id)}">${pimg(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b>
         <span class="pill ${p.q <= 0 ? 'r' : p.q <= LOW() ? 'o' : 'g'}">${p.q <= 0 ? 'OUT' : p.q} ${p.q > 0 ? 'pcs' : ''}</span></div>
         <div>${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div>
@@ -181,7 +185,7 @@ async function stock() {
       ${L.length === 0 ? '<div class="card">No items found.</div>' : ''}</div>`;
     document.getElementById('bk').onclick = () => go('home');
     const qi = document.getElementById('q'); qi.oninput = e => { q = e.target.value; draw(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(q.length, q.length); };
-    $app.querySelectorAll('.tabs:not(.cats) button').forEach(b => b.onclick = () => { filter = b.dataset.f; draw(); });
+    $app.querySelectorAll('.tabs:not(.cats) button').forEach(b => b.onclick = () => { if (b.dataset.f === 'hid') { hiddenView = true; filter = 'all'; } else { hiddenView = false; filter = b.dataset.f; } draw(); });
     $app.querySelectorAll('.cats button').forEach(b => b.onclick = () => { cat = b.dataset.k; draw(); });
     if (admin) {
       const run = async mode => { try { const d = new Date(), n = `Stock ${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}.xlsx`; const by = {}; Object.keys(IB).forEach(k => by[k] = IB[k].map(b => b.code)); await sendFile(await buildStockExcel(P, by), n, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
@@ -204,6 +208,7 @@ function editProduct(p, after) {
     <label>Packing (pieces per carton)</label><input id="ek" type="number" inputmode="numeric" value="${p.pk}">
     <label>English name</label><input id="en" value="${esc(p.en)}">
     <label>Arabic name</label><input id="ea" class="ar" value="${esc(p.ar)}">
+    <button class="btn l" id="hd">${isHidden(p) ? '👁 Show this item again' : '🙈 Hide this item'}</button>
     <label>Category • الفئة</label><select id="ec">${CATLIST.map(([k, n]) => `<option value="${k}" ${catOf(p) === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <label>Barcodes</label><div id="bl"></div>
     <div class="row"><input id="nb" placeholder="Add barcode number"><button class="btn l" id="ab">Add</button></div>
@@ -215,6 +220,7 @@ function editProduct(p, after) {
   m.querySelector('#ab').onclick = async () => { const code = m.querySelector('#nb').value.trim(); if (!code) return; const old = S.barcodes[bkey(code)]; if (old && old !== p.c && !confirm('This barcode already belongs to item ' + old + '. Move it here?')) return;
     try { await setDoc(doc(db, 'barcodes', bkey(code)), { c: p.c, code, by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = p.c; S.barcodeCodes[bkey(code)] = code; m.querySelector('#nb').value = ''; drawB(); } catch (e) { toast('Could not add'); } };
   m.querySelector('#cl').onclick = () => m.remove();
+  m.querySelector('#hd').onclick = async () => { const h = !isHidden(p); try { await updateDoc(doc(db, 'products', p.id), { hidden: h }); p.hidden = h; m.remove(); toast(h ? 'Hidden' : 'Visible again'); after(); } catch (e) { toast('Could not save'); } };
   m.querySelector('#sv').onclick = async () => {
     const v = { q: Math.floor(+m.querySelector('#eq').value || 0), p: +m.querySelector('#ep').value || 0, pk: Math.max(1, +m.querySelector('#ek').value || 1), en: m.querySelector('#en').value, ar: m.querySelector('#ea').value, cat: m.querySelector('#ec').value };
     try { await updateDoc(doc(db, 'products', p.id), v); Object.assign(p, v); m.remove(); toast('Saved'); after(); } catch (e) { toast('Could not save'); }
