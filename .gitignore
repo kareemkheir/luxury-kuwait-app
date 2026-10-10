@@ -1,0 +1,7 @@
+# Never publish company data (the repo is public)
+products.json
+customers.json
+private-data/
+*.xlsx
+*.zip
+.DS_Store
