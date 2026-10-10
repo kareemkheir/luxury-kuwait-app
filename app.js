@@ -39,7 +39,7 @@ const CATLIST = [['lav', 'LAV'], ['flask', 'Flask • مطارات'], ['hascevhe
 let SUBMAP = {}; jget('./subcats.json').then(m => { if (m) SUBMAP = m; });
 const SUBS = { flask: [['sun', 'SUN'], ['shimizu', 'SHIMIZU'], ['fg', 'FG'], ['other', 'Others']],
   hascevher: [['pots', 'قدور'], ['fry', 'مقالي'], ['other', 'Others']],
-  lav: [['tumbler', 'تمبلر'], ['stem', 'كاسات بقاعدة'], ['tea', 'استكانة / صحن'], ['mug', 'ماج'], ['dolka', 'دولكة'], ['other', 'Others']] };
+  lav: [['tumbler', 'كاسات'], ['stem', 'كاسات بقاعدة'], ['tea', 'استكانة / صحن'], ['mug', 'ماج'], ['dolka', 'دولكة'], ['other', 'Others']] };
 const subOf = p => p.sub || SUBMAP[p.c] || 'other';
 const subRank = p => { const L = SUBS[catOf(p)]; return L ? Math.max(0, L.findIndex(s => s[0] === subOf(p))) : 0; };
 const catOf = p => p.cat || CATMAP[p.c] || 'others';
