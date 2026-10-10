@@ -33,6 +33,18 @@ export async function buildExcel(items, name) {
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
+export async function buildStockExcel(products, inv) {
+  await loadScript(EXCELJS);
+  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Stock');
+  ws.columns = [{ width: 18 }, { width: 30 }, { width: 36 }, { width: 10 }, { width: 12 }, { width: 10 }, { width: 22 }, { width: 40 }];
+  const h = ws.addRow(['Item Number', 'Arabic Name', 'English Name', 'Packing', 'Stock Qty', 'Price (KWD)', 'Barcode (item number)', 'Added Barcodes']); h.font = { bold: true };
+  [...products].sort((a, b) => String(a.c).localeCompare(String(b.c))).forEach(p => {
+    const r = ws.addRow([p.c, p.ar || '', p.en || '', p.pk, p.q, p.p, p.c, (inv[p.c] || []).join(', ')]);
+    r.getCell(7).numFmt = '@'; r.getCell(8).numFmt = '@'; r.getCell(6).numFmt = '0.000';
+  });
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
 export async function sendFile(blob, filename, mode) {
   const f = new File([blob], filename, { type: blob.type });
   if (mode === 'share' && navigator.canShare && navigator.canShare({ files: [f] })) {
@@ -43,12 +55,18 @@ export async function sendFile(blob, filename, mode) {
 }
 
 /* ---------- Barcode scanner (camera) ---------- */
-export function scanner(onCode) {
+export function scanner(onCode, onSnap) {
   const m = X.modal(`<h3>Scan barcode</h3><video id="vd" playsinline muted style="width:100%;border-radius:12px;background:#000;max-height:50vh"></video>
-    <div class="sub" id="sm">Starting camera…</div><button class="btn l" id="cl">Close</button>`);
+    <div class="sub" id="sm">Starting camera…</div>${onSnap ? '<button class="btn g" id="sn">📸 Read printed item number</button>' : ''}<button class="btn l" id="cl">Close</button>`);
   let reader, stopped = false, last = '', lastT = 0, pend = '', pendN = 0;
   const stop = () => { stopped = true; try { reader && reader.reset(); } catch (e) {} m.remove(); };
   m.querySelector('#cl').onclick = stop;
+  const sn = m.querySelector('#sn');
+  if (sn) sn.onclick = () => {
+    const v = m.querySelector('#vd'); if (!v.videoWidth) return;
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+    stop(); onSnap(c);
+  };
   (async () => {
     try {
       await loadScript(ZXING);
@@ -150,7 +168,7 @@ async function customerPick(kind) {
 async function cartView(kind) {
   const { S, top, esc, go, kwd, toast, loadProducts } = X;
   const R = kind === 'return', F = KEYS[kind][0], cart = S[F]; await loadProducts();
-  if (!S.barcodes) { S.barcodes = {}; try { (await getDocs(collection(X.db, 'barcodes'))).docs.forEach(d => S.barcodes[d.id] = d.data().c); } catch (e) {} }
+  await X.loadBarcodes();
   const bkey = c => String(c).trim().replace(/\//g, '_');
   const P = S.products, by = id => { const k = String(id).trim(); let p = P.find(p => p.id === k || p.c.toLowerCase() === k.toLowerCase()); if (!p && S.barcodes[bkey(k)]) p = P.find(p => p.c === S.barcodes[bkey(k)]); return p; };
   const total = () => r3(cart.items.reduce((a, i) => a + i.q * i.p, 0));
@@ -190,8 +208,17 @@ async function cartView(kind) {
     $('#sc').onclick = () => scanner(code => {
       if (!by(code)) { setTimeout(() => linkBarcode(code), 50); return false; }
       toast(addItem(code)); return true;
-    });
+    }, snapRead);
     $('#se').onclick = searchItem;
+    async function snapRead(cv) {
+      try {
+        toast('Reading the printed number…');
+        const hits = matchText(await ocrText(cv), S.products);
+        if (hits.length === 1) return toast(addItem(hits[0].c));
+        if (hits.length > 1) return pickOne(hits, null);
+        toast('Could not read an item number. Get closer so the number fills the screen, or use Search.');
+      } catch (err) { console.error(err); toast('Could not read the photo'); }
+    }
     $('#cr').onclick = R ? createReturn : create;
     $('#ph').onclick = () => $('#pf').click();
     $('#pf').onchange = async e => {
@@ -201,13 +228,13 @@ async function cartView(kind) {
         toast('Reading…'); let code = null;
         try { code = await decodeImage(f); } catch (err) {}
         if (code && by(code)) { const r = addItem(code); if (r.startsWith('Added')) ok++; else toast(r); continue; }
-        if (R) {   // returns: also try to read the printed item number
+        {   // also try to read the printed item number
           try {
             toast('Reading the printed number… (first time takes a few seconds)');
             const hits = matchText(await ocrText(f), S.products);
             if (hits.length === 1) {
               const p = hits[0]; addItem(p.c); ok++;
-              if (code) { try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: p.c, by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = p.c; } catch (e2) {} }
+              if (code) { try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: p.c, code: String(code).trim(), by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = p.c; (S.barcodeCodes ||= {})[bkey(code)] = String(code).trim(); } catch (e2) {} }
               continue;
             }
             if (hits.length > 1) { pickOne(hits, code); continue; }
@@ -224,7 +251,7 @@ async function cartView(kind) {
     m.querySelector('#cl').onclick = () => m.remove();
     m.querySelectorAll('[data-c]').forEach(c => c.onclick = async () => {
       addItem(c.dataset.c); m.remove();
-      if (code) { try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: c.dataset.c, by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = c.dataset.c; } catch (e2) {} }
+      if (code) { try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: c.dataset.c, code: String(code).trim(), by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = c.dataset.c; (S.barcodeCodes ||= {})[bkey(code)] = String(code).trim(); } catch (e2) {} }
     });
   }
   function linkBarcode(code) {
@@ -237,7 +264,7 @@ async function cartView(kind) {
       const L = P.filter(p => p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t)).slice(0, 25);
       m.querySelector('#sr').innerHTML = L.map(p => `<div class="card" data-c="${esc(p.c)}"><div class="row"><b>${esc(p.c)}</b><span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div>`).join('');
       m.querySelectorAll('[data-c]').forEach(c => c.onclick = async () => {
-        try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: c.dataset.c, by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = c.dataset.c; }
+        try { await setDoc(doc(X.db, 'barcodes', bkey(code)), { c: c.dataset.c, code: String(code).trim(), by: S.user.name, at: Date.now() }); S.barcodes[bkey(code)] = c.dataset.c; (S.barcodeCodes ||= {})[bkey(code)] = String(code).trim(); }
         catch (e) { return toast('Could not save the barcode'); }
         m.remove(); toast(addItem(c.dataset.c) + ' • barcode saved');
       });
