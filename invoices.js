@@ -369,7 +369,7 @@ async function cartView(kind) {
     saveCart(kind); draw(); return `Added ${p.c}`;
   }
   function searchItem() {
-    const PV = P.filter(p => !X.isHidden(p) && (R || p.q > 0));
+    const PV = P.filter(p => !X.isHidden(p));
     let cat = 'all', sub = 'all', t = '', lim = 40;
     const m = X.modal(`<h3>Add items</h3><input id="si" placeholder="Item number or name…" autofocus>
       <div class="tabs cats" id="ct"></div><div class="tabs cats" id="cs"></div><div id="sr"></div><button class="btn g" id="cl">Done</button>`);

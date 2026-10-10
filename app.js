@@ -30,10 +30,11 @@ const pw = pin => pin + '-kw';
 
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
-let IMGMAP = {}, HIDDEN = new Set(), RENAMES = {};
+let IMGMAP = {}, HIDDEN = new Set(), ZEROHID = new Set(), RENAMES = {};
 const jget = u => fetch(u, { cache: 'no-store' }).then(r => r.json()).catch(() => null);
-const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; })]);
-const isHidden = p => p.hidden === undefined ? HIDDEN.has(p.c) : !!p.hidden;
+const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./zerohidden.json').then(m => { if (m) ZEROHID = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; })]);
+const isHidden = p => p.hidden === undefined ? (HIDDEN.has(p.c) || ZEROHID.has(p.c)) : !!p.hidden;
+const toDelete = p => isHidden(p) && p.hidden === undefined && HIDDEN.has(p.c);
 let CATMAP = {}; const READY2 = jget('./cats.json').then(m => { if (m) CATMAP = m; });
 const CATLIST = [['lav', 'LAV'], ['flask', 'Flask • مطارات'], ['hascevher', 'Hascevher'], ['porcelain', 'Porcelain • بورسلين'], ['tea', 'Tea Set • طقم شاي'], ['tray', 'Tray • صواني'], ['others', 'Others • أخرى']];
 let SUBMAP = {}; jget('./subcats.json').then(m => { if (m) SUBMAP = m; });
@@ -171,21 +172,21 @@ async function stock() {
   await loadConfig(); let P = await loadProducts(); await loadBarcodes(); let hiddenView = false; let IB = invBarcodes();
   let filter = 'all', q = '', cat = 'all', sub = 'all';
   const draw = () => {
-    const VP = P.filter(p => !isHidden(p) && p.q > 0), nh = P.filter(isHidden).length, nz = P.filter(p => !isHidden(p) && p.q <= 0).length, low = VP.filter(p => p.q > 0 && p.q <= LOW()).length, zero = nz;
+    const VP = P.filter(p => !isHidden(p)), nh = P.length - VP.length, low = VP.filter(p => p.q > 0 && p.q <= LOW()).length, zero = VP.filter(p => p.q <= 0).length;
     const t = q.trim().toLowerCase();
-    let L = P.filter(p => (hiddenView ? isHidden(p) : !isHidden(p)) && (cat === 'all' || catOf(p) === cat) && (sub === 'all' || subOf(p) === sub) && (filter === 'all' ? (p.q > 0 || hiddenView || !!t) : (filter === 'low' && p.q > 0 && p.q <= LOW()) || (filter === 'zero' && p.q <= 0)) &&
+    let L = P.filter(p => (hiddenView ? isHidden(p) : !isHidden(p)) && (cat === 'all' || catOf(p) === cat) && (sub === 'all' || subOf(p) === sub) && (filter === 'all' || (filter === 'low' && p.q > 0 && p.q <= LOW()) || (filter === 'zero' && p.q <= 0)) &&
       (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || (IB[p.c] || []).some(b => b.code.toLowerCase().includes(t))));
     if (cat !== 'all' && SUBS[cat]) L = L.slice().sort((x, y) => subRank(x) - subRank(y) || x.c.localeCompare(y.c));
     const shown = L.slice(0, 80);
     $app.innerHTML = top('Stock • المخزون') + `<div class="wrap">
       <input id="q" placeholder="Search item number, name or barcode…" value="${esc(q)}">
       ${admin ? '<div class="row"><button class="btn l" id="xd">⬇ Export Excel</button><button class="btn l" id="xs">Share</button></div>' : ''}
- <div class="tabs cats"><button data-k="all" class="${cat === 'all' ? 'on' : ''}">All</button>${CATLIST.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && p.q > 0 && catOf(p) === k).length}</button>`).join('')}</div>
-      ${cat !== 'all' && SUBS[cat] ? `<div class="tabs cats sub"><button data-s="all" class="${sub === 'all' ? 'on' : ''}">All</button>${SUBS[cat].map(([k, n]) => `<button data-s="${k}" class="${sub === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && p.q > 0 && catOf(p) === cat && subOf(p) === k).length}</button>`).join('')}</div>` : ''}
+ <div class="tabs cats"><button data-k="all" class="${cat === 'all' ? 'on' : ''}">All</button>${CATLIST.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && catOf(p) === k).length}</button>`).join('')}</div>
+      ${cat !== 'all' && SUBS[cat] ? `<div class="tabs cats sub"><button data-s="all" class="${sub === 'all' ? 'on' : ''}">All</button>${SUBS[cat].map(([k, n]) => `<button data-s="${k}" class="${sub === k ? 'on' : ''}">${n} ${P.filter(p => !isHidden(p) && catOf(p) === cat && subOf(p) === k).length}</button>`).join('')}</div>` : ''}
       <div class="tabs"><button data-f="all" class="${filter === 'all' && !hiddenView ? 'on' : ''}">All ${VP.length}</button>
       <button data-f="low" class="${filter === 'low' ? 'on' : ''}">Low ${low}</button>
       <button data-f="zero" class="${filter === 'zero' ? 'on' : ''}">Out ${zero}</button>${admin && nh ? `<button data-f="hid" class="${hiddenView ? 'on' : ''}">Hidden ${nh}</button>` : ''}</div>
-      ${hiddenView && admin && P.some(isHidden) ? `<button class="btn" id="dh" style="background:#c0392b;color:#fff">🗑 Delete all ${nh} hidden items permanently</button>` : ''}
+      ${hiddenView && admin && P.some(toDelete) ? `<button class="btn" id="dh" style="background:#c0392b;color:#fff">🗑 Delete the ${P.filter(toDelete).length} items marked for deletion</button>` : ''}
       ${shown.map(p => `<div class="card pc" data-id="${esc(p.id)}">${pimg(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b>
         <span class="pill ${p.q <= 0 ? 'r' : p.q <= LOW() ? 'o' : 'g'}">${p.q <= 0 ? 'OUT' : p.q} ${p.q > 0 ? 'pcs' : ''}</span></div>
         <div>${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div>
@@ -199,7 +200,7 @@ async function stock() {
     $app.querySelectorAll('.cats.sub button').forEach(b => b.onclick = () => { sub = b.dataset.s; draw(); });
     const dh = document.getElementById('dh');
     if (dh) dh.onclick = async () => {
-      const H = P.filter(isHidden), pcs = H.reduce((s, p) => s + Math.max(0, p.q), 0);
+      const H = P.filter(toDelete), pcs = H.reduce((s, p) => s + Math.max(0, p.q), 0);
       if (!confirm(`Permanently delete ${H.length} hidden items (${pcs} pieces in stock)?\n\nA backup Excel of these items will download first. This cannot be undone.`)) return;
       dh.disabled = true; dh.textContent = 'Saving backup…';
       try {
