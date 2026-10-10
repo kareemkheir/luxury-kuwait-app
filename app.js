@@ -20,7 +20,7 @@ if (!firebaseConfig) {
 
 import { initInvoices, invoiceHome } from './invoices.js';
 import { initStatement, statementHome, chequesHome } from './statement.js';
-import { initActivity, checkInModal } from './activity.js';
+import { initActivity, getLoc } from './activity.js';
 import { initCalendar, calendarHome } from './calendar.js';
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb), db = getFirestore(fb);
@@ -114,10 +114,9 @@ function home() {
     <button class="big small" data-go="backup"><span class="ic">💾</span>Backup<span class="ar">نسخة احتياطية</span></button></div>` : '';
   $app.innerHTML = top(`Hello, ${esc(S.user.name)}`, false).replace('<h1>', '<h1 style="font-size:18px">') + `<div class="wrap"><div class="grid">${items.map(k =>
     `<button class="big" data-go="${k}"><span class="ic">${BTN[k][0]}</span>${BTN[k][1]}<span class="ar">${BTN[k][2]}</span></button>`).join('')}</div>${adminExtra}
-    ${r === 'sales' ? '<button class="btn l" id="cin" style="margin-top:12px">📍 Check in • تسجيل الحضور</button>' : ''}
     <p class="sub" style="text-align:center;margin-top:24px">${esc(S.user.role)} • ${esc(S.user.username || '')}</p></div>`;
   $app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
-  const cin = document.getElementById('cin'); if (cin) cin.onclick = checkInModal;
+  if (r !== 'admin' && !S.locAsked) { S.locAsked = true; getLoc(); } // asks the employee for location permission once
   const lo = document.getElementById('lo'); if (lo) lo.onclick = () => signOut(auth);
 }
 

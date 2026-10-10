@@ -1,5 +1,5 @@
 import { doc, getDocs, updateDoc, collection, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { logEvent, checkInModal } from './activity.js';
+import { logEvent } from './activity.js';
 
 let X;
 export function initCalendar(ctx) { X = ctx; }
@@ -32,7 +32,6 @@ export async function calendarHome() {
     const late = INV.filter(i => (i.deliveryStatus || 'pending') === 'pending' && i.delivery < t0).sort((a, b) => a.delivery.localeCompare(b.delivery));
     const day = B[sel] || [], cx = INV.filter(i => i.deliveryStatus === 'cancelled' && role === 'admin');
     $('#app').innerHTML = top('Calendar • التقويم') + `<div class="wrap">
-      ${role === 'warehouse' ? '<button class="btn l" id="ci">📍 Check in • تسجيل الحضور</button>' : ''}
       ${role === 'admin' && cx.length ? `<div class="card" style="background:#fde7e5;color:var(--r)"><b>⚠ ${cx.length} order(s) cancelled by the customer</b><div>Open the invoice in New Invoice → Recent invoices and cancel it so the stock returns:</div>${cx.map(i => `<div>${esc(i.no)} • ${esc(i.custEn)}</div>`).join('')}</div>` : ''}
       <div class="row" style="margin-bottom:8px"><button class="btn l" id="pm" style="width:60px;margin:0">‹</button><b>${MONTHS[mo - 1]} ${y}</b><button class="btn l" id="nm" style="width:60px;margin:0">›</button></div>
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;margin-bottom:12px">
@@ -45,7 +44,6 @@ export async function calendarHome() {
     $('#nm').onclick = () => { const d = new Date(y, mo, 1); ym = iso(d).slice(0, 7); draw(); };
     document.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { sel = b.dataset.d; draw(); });
     document.querySelectorAll('.card[data-id]').forEach(c => c.onclick = () => open(INV.find(i => i.id === c.dataset.id)));
-    const ci = $('#ci'); if (ci) ci.onclick = checkInModal;
   };
   function open(i) {
     const st = i.deliveryStatus || 'pending', admin = role === 'admin';

@@ -1,3 +1,4 @@
+import { logEvent } from './activity.js';
 import { doc, getDocs, setDoc, updateDoc, collection, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 let X;
@@ -66,6 +67,8 @@ export async function statementHome() {
 async function detail(c, L0) {
   const { S, top, esc, go, kwd, toast } = X;
   let L = L0;
+  const seen = (X.S.seen ||= {}), nowT = Date.now();
+  if (!seen[c.id] || nowT - seen[c.id] > 300000) { seen[c.id] = nowT; logEvent('statement_view', { cust: c.id, custEn: c.en }); }
   const draw = () => {
     const a = account(c, L), admin = S.user.role === 'admin';
     const months = {};
