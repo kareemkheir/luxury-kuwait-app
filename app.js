@@ -177,6 +177,7 @@ async function stock() {
       <div class="tabs"><button data-f="all" class="${filter === 'all' && !hiddenView ? 'on' : ''}">All ${VP.length}</button>
       <button data-f="low" class="${filter === 'low' ? 'on' : ''}">Low ${low}</button>
       <button data-f="zero" class="${filter === 'zero' ? 'on' : ''}">Out ${zero}</button>${admin && nh ? `<button data-f="hid" class="${hiddenView ? 'on' : ''}">Hidden ${nh}</button>` : ''}</div>
+      ${hiddenView && admin && P.some(isHidden) ? `<button class="btn" id="dh" style="background:#c0392b;color:#fff">🗑 Delete all ${nh} hidden items permanently</button>` : ''}
       ${shown.map(p => `<div class="card pc" data-id="${esc(p.id)}">${pimg(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b>
         <span class="pill ${p.q <= 0 ? 'r' : p.q <= LOW() ? 'o' : 'g'}">${p.q <= 0 ? 'OUT' : p.q} ${p.q > 0 ? 'pcs' : ''}</span></div>
         <div>${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div>
@@ -187,6 +188,26 @@ async function stock() {
     const qi = document.getElementById('q'); qi.oninput = e => { q = e.target.value; draw(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(q.length, q.length); };
     $app.querySelectorAll('.tabs:not(.cats) button').forEach(b => b.onclick = () => { if (b.dataset.f === 'hid') { hiddenView = true; filter = 'all'; } else { hiddenView = false; filter = b.dataset.f; } draw(); });
     $app.querySelectorAll('.cats button').forEach(b => b.onclick = () => { cat = b.dataset.k; draw(); });
+    const dh = document.getElementById('dh');
+    if (dh) dh.onclick = async () => {
+      const H = P.filter(isHidden), pcs = H.reduce((s, p) => s + Math.max(0, p.q), 0);
+      if (!confirm(`Permanently delete ${H.length} hidden items (${pcs} pieces in stock)?\n\nA backup Excel of these items will download first. This cannot be undone.`)) return;
+      dh.disabled = true; dh.textContent = 'Saving backup…';
+      try {
+        const d = new Date(), n = `Deleted items backup ${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}.xlsx`;
+        await sendFile(await buildStockExcel(H, {}), n, 'download');
+      } catch (e) { if (!confirm('Backup could not be saved. Delete anyway?')) { draw(); return; } }
+      dh.textContent = 'Deleting…';
+      try {
+        const ids = new Set(H.map(p => p.id)), codes = new Set(H.map(p => p.c));
+        const refs = H.map(p => doc(db, 'products', p.id));
+        await loadBarcodes();
+        Object.keys(S.barcodes).forEach(b => { if (codes.has(S.barcodes[b])) refs.push(doc(db, 'barcodes', b)); });
+        for (let i = 0; i < refs.length; i += 400) { const b = writeBatch(db); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit(); }
+        P = S.products = P.filter(p => !ids.has(p.id)); S.barcodes = null; await loadBarcodes(true); IB = invBarcodes();
+        hiddenView = false; toast(`${H.length} items deleted`); draw();
+      } catch (e) { console.error(e); toast('Delete failed — nothing more was removed'); draw(); }
+    };
     if (admin) {
       const run = async mode => { try { const d = new Date(), n = `Stock ${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}.xlsx`; const by = {}; Object.keys(IB).forEach(k => by[k] = IB[k].map(b => b.code)); await sendFile(await buildStockExcel(P, by), n, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
       document.getElementById('xd').onclick = () => run('download'); document.getElementById('xs').onclick = () => run('share');
