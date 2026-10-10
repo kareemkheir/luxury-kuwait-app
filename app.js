@@ -7,7 +7,11 @@ const $app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const kwd = n => Number(n || 0).toLocaleString('en-US', {minimumFractionDigits: 3, maximumFractionDigits: 3});
 const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.className = 'on'; setTimeout(() => t.className = '', 2600); };
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) location.reload(); });
+}
 
 if (!firebaseConfig) {
   $app.innerHTML = '<div class="wrap"><div class="card"><b>Almost ready</b><p>The app is built but not yet connected to your database. Waiting for the Firebase settings.</p></div></div>';
