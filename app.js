@@ -1,7 +1,7 @@
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, getDocs, collection, writeBatch, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, getDocs, collection, writeBatch, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const $app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -26,7 +26,17 @@ import { initReport, reportHome } from './report.js';
 import { initBackup, backupHome } from './backup.js';
 import { initShelf, shelfHome } from './shelf.js';
 const fb = initializeApp(firebaseConfig);
-const auth = getAuth(fb), db = getFirestore(fb);
+const auth = getAuth(fb);
+// Keep a copy of the data on the phone so the app opens and visits can be saved without signal (they sync later).
+let db; try { db = initializeFirestore(fb, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); } catch (e) { db = getFirestore(fb); }
+(function offlineBanner() {
+  const b = document.createElement('div'); b.id = 'offb';
+  b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99;background:#b45309;color:#fff;text-align:center;padding:6px 10px;font-size:13px;display:none';
+  b.textContent = 'No internet • You can still do Shelf Check visits; they sync when the signal returns. Invoices need internet. • لا يوجد اتصال';
+  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(b));
+  const u = () => { b.style.display = navigator.onLine ? 'none' : 'block'; };
+  addEventListener('online', u); addEventListener('offline', u); document.addEventListener('DOMContentLoaded', u);
+})();
 const mail = u => u.trim().toLowerCase().replace(/[^a-z0-9]/g, '') + '@kitchenware.app';
 const pw = pin => pin + '-kw';
 

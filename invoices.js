@@ -441,21 +441,25 @@ async function cartView(kind) {
       const rec = { cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', shelf: cart.items.filter(i => i.shelf).map(i => i.c),
         draft: invNo ? [] : cart.items.filter(i => i.q > 0).map(i => ({ c: i.c, q: i.q })), invoiced: invNo || null, note: cart.note || '', delivery: cart.delivery || '' };
       if (!cart.visitId) Object.assign(rec, { by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now) });
-      await setDoc(doc(X.db, 'shelf', id), rec, { merge: true }); return true;
+      const w = setDoc(doc(X.db, 'shelf', id), rec, { merge: true });
+      // Offline, the write waits on the phone and syncs by itself later, so don't make the salesman wait for the server.
+      const r = await Promise.race([w.then(() => 'ok'), new Promise(res => setTimeout(() => res('queued'), navigator.onLine ? 8000 : 600))]);
+      w.catch(e => console.error(e)); cart.queued = (r === 'queued'); return true;
     } catch (e) { console.error(e); return false; }
   }
   async function saveOnly() {
     if (!cart.items.length) return;
     const b = $('#sv'); b.disabled = true; b.textContent = 'Saving…';
     if (!(await saveVisit(null))) { b.disabled = false; b.textContent = '💾 Save visit (shelf + draft order)'; return toast('Could not save the visit. Try again.'); }
-    const n = cart.items.filter(i => i.shelf).length, o = cart.items.filter(i => i.q > 0).length, cu = cart.cust.en;
+    const n = cart.items.filter(i => i.shelf).length, o = cart.items.filter(i => i.q > 0).length, cu = cart.cust.en, qd = cart.queued;
     logEvent('visit', { cust: cart.cust.id, custEn: cu, shelf: n });
     S[F] = null; saveCart(kind);
-    $('#app').innerHTML = top('Visit saved ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">🧺</div><h2>${esc(cu)}</h2><div>${n} item(s) on his shelf</div><div class="sub">${o ? o + ' item(s) saved as a draft order — open it from the Visits tab to make the invoice' : 'No order'}</div></div>
+    $('#app').innerHTML = top(qd ? 'Visit saved on phone ✓' : 'Visit saved ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">🧺</div><h2>${esc(cu)}</h2><div>${n} item(s) on his shelf</div>${qd ? '<div style="color:#b45309;margin-top:6px">No signal: it will upload automatically when the internet returns. Open the app once with signal. • سيتم الرفع تلقائيا عند عودة الإنترنت</div>' : ''}<div class="sub">${o ? o + ' item(s) saved as a draft order — open it from the Visits tab to make the invoice' : 'No order'}</div></div>
       <button class="btn g" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
     $('#bk').onclick = () => go('home'); $('#nw').onclick = () => go('invoice'); $('#hm').onclick = () => go('home');
   }
   async function create() {
+    if (!navigator.onLine) return alert('No internet. Invoices need a connection so stock stays correct.\nTap "Save visit" now and make the invoice later.\nلا يوجد اتصال: احفظ الزيارة وأنشئ الفاتورة لاحقا');
     const btn = $('#cr'); btn.disabled = true; btn.textContent = 'Creating…';
     const items = cart.items.filter(i => i.q > 0).map(i => ({ c: i.c, en: i.en, pk: i.pk, lav: lavOf(i.c), q: i.q, p: i.p, list: i.list }));
     const now = new Date(); let inv;
