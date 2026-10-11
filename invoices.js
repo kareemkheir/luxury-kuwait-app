@@ -81,9 +81,12 @@ export function scanner(opts) {
   const showLast = r => {
     cur = r.c || null; const box = $$('#lc');
     if (!cur) { box.innerHTML = ''; return; }
-    const draw = () => { box.innerHTML = `<div class="row">${X.img(cur)}<b style="flex:1;margin-left:8px">${X.esc(cur)}</b><span class="row" style="gap:6px"><button class="btn l" data-d="-1">−</button><input id="qn" type="number" inputmode="numeric" value="${opts.getQty(cur)}" style="width:64px;text-align:center"><button class="btn l" data-d="1">+</button></span></div>`;
+    const draw = () => { const sh = opts.shelfMode && opts.getShelf(cur);
+      box.innerHTML = `<div class="row">${X.img(cur)}<b style="flex:1;margin-left:8px">${X.esc(cur)}</b>${opts.shelfMode ? `<button class="btn ${sh ? 'g' : 'l'}" id="shb" style="margin:0;width:auto">✔ On shelf${sh ? ' ✓' : ''}</button>` : ''}</div>
+        <div class="row" style="gap:6px;margin-top:6px">${opts.shelfMode ? '<span>🛒 Order</span>' : '<span></span>'}<span class="row" style="gap:6px"><button class="btn l" data-d="-1">−</button><input id="qn" type="number" inputmode="numeric" value="${opts.getQty(cur)}" style="width:64px;text-align:center"><button class="btn l" data-d="1">+</button></span></div>`;
+      const sb = box.querySelector('#shb'); if (sb) sb.onclick = () => { opts.toggleShelf(cur); draw(); };
       box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const n = opts.setQty(cur, opts.getQty(cur) + +b.dataset.d); say(`${cur} → ${n}`, true); draw(); });
-      box.querySelector('#qn').onchange = e => { const n = opts.setQty(cur, +e.target.value || 1); e.target.value = n; }; };
+      box.querySelector('#qn').onchange = e => { const n = opts.setQty(cur, +e.target.value || (opts.shelfMode ? 0 : 1)); e.target.value = n; }; };
     draw();
   };
   const handle = r => {
@@ -248,7 +251,7 @@ async function customerPick(kind) {
       const qi = $('#q'); qi.oninput = e => { q = e.target.value; draw(); const n = $('#q'); n.focus(); n.setSelectionRange(q.length, q.length); };
       document.querySelectorAll('.card[data-id]').forEach(c => c.onclick = () => {
         const cu = C.find(x => x.id === c.dataset.id);
-        S[F] = { cust: { id: cu.id, en: cu.en, ar: cu.ar, disc: cu.disc || 0 }, items: [], delivery: iso(new Date(Date.now() + 864e5)), note: '', mode: 'shelf' }; saveCart(kind); cartView(kind);
+        S[F] = { cust: { id: cu.id, en: cu.en, ar: cu.ar, disc: cu.disc || 0 }, items: [], delivery: iso(new Date(Date.now() + 864e5)), note: '' }; saveCart(kind); cartView(kind);
       });
     } else (R ? recentReturns() : tab === 'visits' ? recentVisits() : recentList());
   };
@@ -266,7 +269,6 @@ async function cartView(kind) {
     const pcs = cart.items.reduce((a, i) => a + i.q, 0), ctn = cart.items.reduce((a, i) => a + i.q / i.pk, 0);
     $('#app').innerHTML = top((R ? 'Return • ' : 'Visit • ') + esc(cart.cust.en)) + `<div class="wrap">
       ${cart.cust.disc ? `<div class="pill g" style="margin-bottom:8px">Customer discount ${cart.cust.disc}%</div>` : ''}
-      ${R ? '' : `<div class="card" style="padding:8px"><div class="sub" style="margin-bottom:4px">Scan / tap on an item means:</div><div class="tabs"><button data-md="shelf" class="${cart.mode !== 'order' ? 'on' : ''}">✔ On his shelf • موجود</button><button data-md="order" class="${cart.mode === 'order' ? 'on' : ''}">🛒 Order • طلب</button></div></div>`}
       <div class="grid" style="margin-bottom:10px"><button class="btn" id="sc">📷 Scan</button><button class="btn l" id="se">🔎 Search item</button></div>
       <button class="btn l" id="ph" style="margin-top:0">${R ? '🖼 Photo: barcode or printed item number' : '🖼 Read barcode from photo'}</button><input type="file" id="pf" accept="image/*" multiple style="display:none">
       ${cart.items.length === 0 ? '<div class="card sub">No items yet. Scan a barcode or search for an item.</div>' : ''}
@@ -293,7 +295,6 @@ async function cartView(kind) {
     document.querySelectorAll('[data-ctn]').forEach(b => b.onclick = () => {
       const it = cart.items[+b.dataset.ctn]; if (!R && it.q + it.pk > it.stock) { toast(`Only ${it.stock} in stock`); it.q = it.stock; } else it.q += it.pk; saveCart(kind); draw();
     });
-    document.querySelectorAll('[data-md]').forEach(b => b.onclick = () => { cart.mode = b.dataset.md; saveCart(kind); draw(); });
     document.querySelectorAll('[data-sh]').forEach(c => c.onchange = () => { cart.items[+c.dataset.sh].shelf = c.checked; saveCart(kind); });
     const sv = $('#sv'); if (sv) sv.onclick = saveOnly;
     const dd = $('#dd'); if (dd) dd.onchange = e => { cart.delivery = e.target.value; saveCart(kind); };
@@ -303,7 +304,7 @@ async function cartView(kind) {
     $('#cn').onclick = () => { if (!cart.items.length || confirm('Throw away this draft?')) { S[F] = null; saveCart(kind); go(R ? 'return' : 'invoice'); } };
     $('#sc').onclick = () => {
       let pendingHit = null;
-      const res = c => { const r = addItem(c), p = by(c); return { ok: r.startsWith('Added'), msg: r.startsWith('Added') ? `✔ ${p.c} — ${p.en || ''}` : r, c: p ? p.c : null }; };
+      const res = c => { if (!R) { const p = by(c); return { ok: true, msg: `${p.c} — ${p.en || ''}`, c: p.c }; } const r = addItem(c), p = by(c); return { ok: r.startsWith('Added'), msg: r.startsWith('Added') ? `✔ ${p.c} — ${p.en || ''}` : r, c: p ? p.c : null }; };
       scanner({
         onCode: code => by(code) ? res(code) : { ok: false, unknown: code, msg: 'Unknown barcode ' + code },
         onText: (text, probe) => {
@@ -311,8 +312,11 @@ async function cartView(kind) {
           return pendingHit ? res(pendingHit.c) : null;
         },
         onUnknown: code => linkBarcode(code),
+        shelfMode: !R,
+        getShelf: c => !!(cart.items.find(i => i.c === c) || {}).shelf,
+        toggleShelf: c => toggleShelf(c),
         getQty: c => (cart.items.find(i => i.c === c) || {}).q || 0,
-        setQty: (c, n) => { const it = cart.items.find(i => i.c === c); if (!it) return 0; n = Math.max(R ? 1 : 0, Math.floor(n) || 0); if (!R && n > it.stock) { toast(`Only ${it.stock} in stock`); n = it.stock; } it.q = n; saveCart(kind); draw(); return n; }
+        setQty: (c, n) => { if (!R) return setOrder(c, n); const it = cart.items.find(i => i.c === c); if (!it) return 0; n = Math.max(1, Math.floor(n) || 1); it.q = n; saveCart(kind); draw(); return n; }
       });
     };
     $('#se').onclick = searchItem;
@@ -367,14 +371,33 @@ async function cartView(kind) {
       });
     };
   }
+  function ensure(c) {
+    const p = by(c); if (!p) return null; let it = cart.items.find(i => i.c === p.c);
+    if (!it) { it = { c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: r3(p.p * (1 - (cart.cust.disc || 0) / 100)), q: 0, shelf: false, note: '' }; cart.items.push(it); }
+    return it;
+  }
+  const tidy = it => { if (it && !it.q && !it.shelf) { const k = cart.items.indexOf(it); if (k >= 0) cart.items.splice(k, 1); } };
+  function toggleShelf(c) { const it = ensure(c); if (!it) return false; it.shelf = !it.shelf; const r = it.shelf; tidy(it); saveCart(kind); draw(); return r; }
+  function setOrder(c, n) {
+    const it = ensure(c); if (!it) return 0; n = Math.max(0, Math.floor(n) || 0);
+    if (n > it.stock) { toast(it.stock > 0 ? `Only ${it.stock} in stock` : `${c} is OUT OF STOCK`); n = Math.max(0, it.stock); }
+    it.q = n; tidy(it); saveCart(kind); draw(); return n;
+  }
+  function choose(c) {   // small window for one item: tick "on his shelf" and/or set pieces to order
+    const p = by(c); if (!p) return;
+    const m = X.modal(`<div id="ch"></div><button class="btn g" id="cl">Done</button>`);
+    const d = () => { const it = cart.items.find(i => i.c === p.c) || {};
+      m.querySelector('#ch').innerHTML = `<div class="card pc">${X.img(p.c)}<div class="pcb"><b>${esc(p.c)}</b><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div><div class="sub">stock ${p.q}</div></div></div>
+        <button class="btn ${it.shelf ? 'g' : 'l'}" data-s>✔ On his shelf${it.shelf ? ' ✓' : ''}</button>
+        <div class="row" style="gap:6px"><span>🛒 Order (pieces)</span><span class="row" style="gap:6px"><button class="btn l" data-o="-1">−</button><b style="min-width:30px;text-align:center">${it.q || 0}</b><button class="btn l" data-o="1">+</button><button class="btn l" data-o="${p.pk || 1}">+${p.pk || 1}</button></span></div>`;
+      m.querySelector('[data-s]').onclick = () => { toggleShelf(p.c); d(); };
+      m.querySelectorAll('[data-o]').forEach(b => b.onclick = () => { setOrder(p.c, ((cart.items.find(i => i.c === p.c) || {}).q || 0) + +b.dataset.o); d(); }); };
+    m.querySelector('#cl').onclick = () => m.remove(); d();
+  }
   function addItem(code, toggle) {
     const p = by(code); if (!p) return `Not found: ${code}`;
     const ex = cart.items.find(i => i.c === p.c);
-    if (!R && cart.mode !== 'order') {   // shelf check: mark the item as available on his shelf (stock does not matter)
-      if (ex) { if (toggle && ex.shelf) { ex.shelf = false; if (!ex.q) cart.items.splice(cart.items.indexOf(ex), 1); saveCart(kind); draw(); return `Removed ${p.c} from shelf list`; } ex.shelf = true; }
-      else cart.items.push({ c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: r3(p.p * (1 - (cart.cust.disc || 0) / 100)), q: 0, shelf: true, note: '' });
-      saveCart(kind); draw(); return `Added ${p.c} (on shelf ✔)`;
-    }
+    if (!R) { choose(p.c); return `Added ${p.c} — choose shelf / order`; }
     if (!R && p.q <= 0) return `${p.c} is OUT OF STOCK`;
     if (ex) { if (!R && ex.q >= ex.stock) return `Only ${ex.stock} in stock`; ex.q += 1; }
     else cart.items.push({ c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: r3(p.p * (1 - (cart.cust.disc || 0) / 100)), q: 1, shelf: false, note: '' });
@@ -390,11 +413,14 @@ async function cartView(kind) {
     const drawCats = () => { m.querySelector('#ct').innerHTML = kinds.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n}</button>`).join(''); m.querySelectorAll('#ct button').forEach(b => b.onclick = () => { cat = b.dataset.k; sub = 'all'; lim = 40; drawCats(); drawList(); }); drawSubs(); };
     const drawSubs = () => { const L = X.SUBS[cat]; m.querySelector('#cs').innerHTML = L ? [['all', 'All'], ...L].map(([k, n]) => `<button data-s="${k}" class="${sub === k ? 'on' : ''}">${n}</button>`).join('') : ''; m.querySelectorAll('#cs button').forEach(b => b.onclick = () => { sub = b.dataset.s; lim = 40; drawSubs(); drawList(); }); };
     const drawList = () => {
-      const L = (!R && cart.mode !== 'order' && t.length >= 2 ? PV0 : PV).filter(p => (cat === 'all' || X.catOf(p) === cat) && (sub === 'all' || X.subOf(p) === sub) && (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || Object.keys(S.barcodes || {}).some(b => S.barcodes[b] === p.c && (((S.barcodeCodes || {})[b] || b).toLowerCase().includes(t)))));
+      const L = (!R && t.length >= 2 ? PV0 : PV).filter(p => (cat === 'all' || X.catOf(p) === cat) && (sub === 'all' || X.subOf(p) === sub) && (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || Object.keys(S.barcodes || {}).some(b => S.barcodes[b] === p.c && (((S.barcodeCodes || {})[b] || b).toLowerCase().includes(t)))));
       if (cat !== 'all' && X.SUBS[cat]) L.sort((x, y) => X.subRank(x) - X.subRank(y) || x.c.localeCompare(y.c));
       if (cat === 'all' && t.length < 2) { m.querySelector('#sr').innerHTML = '<div class="sub">Type to search, or pick a category to browse it.</div>'; return; }
-      m.querySelector('#sr').innerHTML = L.slice(0, lim).map(p => { const ci = cart.items.find(i => i.c === p.c) || {}, n = ci.q || 0, sh = ci.shelf; return `<div class="card pc" data-c="${esc(p.c)}">${X.img(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b><span>${sh ? '<span class="pill g">✔ shelf</span> ' : ''}${n ? `<span class="pill o">in cart ${n}</span> ` : ''}<span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div></div>`; }).join('') + (L.length > lim ? `<button class="btn l" id="mr">Show more (${L.length - lim})</button>` : '') + (L.length === 0 ? '<div class="card">No items found.</div>' : '');
-      m.querySelectorAll('[data-c]').forEach(c => c.onclick = () => { const r = addItem(c.dataset.c, true); toast(r); if (!r.startsWith('Not found') && !r.startsWith('Only') && !r.includes('OUT OF')) { const y = m.querySelector('div').scrollTop; drawList(); m.querySelector('div').scrollTop = y; } });
+      m.querySelector('#sr').innerHTML = L.slice(0, lim).map(p => { const ci = cart.items.find(i => i.c === p.c) || {}, n = ci.q || 0, sh = ci.shelf; return `<div class="card pc" data-c="${esc(p.c)}">${X.img(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b><span>${sh ? '<span class="pill g">✔ shelf</span> ' : ''}${n ? `<span class="pill o">in cart ${n}</span> ` : ''}<span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div>${R ? '' : `<div class="row" style="gap:6px;margin-top:6px"><button class="btn ${sh ? 'g' : 'l'}" style="margin:0;flex:1" data-sh="${esc(p.c)}">✔ Shelf${sh ? ' ✓' : ''}</button><span class="row" style="gap:4px"><button class="btn l" style="margin:0;width:auto" data-od="-1" data-oc="${esc(p.c)}">−</button><b style="min-width:26px;text-align:center">${n}</b><button class="btn l" style="margin:0;width:auto" data-od="1" data-oc="${esc(p.c)}">🛒+</button></span></div>`}</div></div>`; }).join('') + (L.length > lim ? `<button class="btn l" id="mr">Show more (${L.length - lim})</button>` : '') + (L.length === 0 ? '<div class="card">No items found.</div>' : '');
+      const keep = fn => { const y = m.querySelector('div').scrollTop; fn(); drawList(); m.querySelector('div').scrollTop = y; };
+      m.querySelectorAll('[data-sh]').forEach(b => b.onclick = e => { e.stopPropagation(); keep(() => toggleShelf(b.dataset.sh)); });
+      m.querySelectorAll('[data-od]').forEach(b => b.onclick = e => { e.stopPropagation(); keep(() => setOrder(b.dataset.oc, ((cart.items.find(i => i.c === b.dataset.oc) || {}).q || 0) + +b.dataset.od)); });
+      if (!R) { /* shelf / order buttons handle everything */ } else m.querySelectorAll('[data-c]').forEach(c => c.onclick = () => { const r = addItem(c.dataset.c, true); toast(r); if (!r.startsWith('Not found') && !r.startsWith('Only') && !r.includes('OUT OF')) { const y = m.querySelector('div').scrollTop; drawList(); m.querySelector('div').scrollTop = y; } });
       const mr = m.querySelector('#mr'); if (mr) mr.onclick = () => { lim += 40; const y = m.querySelector('div').scrollTop; drawList(); m.querySelector('div').scrollTop = y; };
     };
     m.querySelector('#cl').onclick = () => m.remove();
@@ -516,7 +542,7 @@ async function openVisit(v) {
     const cu = (await X.loadCustomers()).find(c => c.id === v.cust) || {}, disc = cu.disc || 0, items = [], miss = [];
     const add = (c, q, sh) => { let it = items.find(i => i.c === c); if (!it) { const p = P(c); if (!p) return miss.push(c); it = { c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: Math.round(p.p * (1 - disc / 100) * 1000) / 1000, q: 0, shelf: false, note: '' }; items.push(it); } if (q) it.q = Math.min(q, Math.max(0, it.stock)); if (sh) it.shelf = true; };
     (v.shelf || []).forEach(c => add(c, 0, true)); (v.draft || []).forEach(d => add(d.c, d.q, false));
-    X.S[KEYS.invoice[0]] = { cust: { id: v.cust, en: v.custEn, ar: v.custAr || '', disc }, items, delivery: v.delivery || iso(new Date(Date.now() + 864e5)), note: v.note || '', mode: 'order', visitId: v.id };
+    X.S[KEYS.invoice[0]] = { cust: { id: v.cust, en: v.custEn, ar: v.custAr || '', disc }, items, delivery: v.delivery || iso(new Date(Date.now() + 864e5)), note: v.note || '', visitId: v.id };
     saveCart('invoice'); m.remove(); if (miss.length) X.toast('Not found: ' + miss.join(', ')); cartView('invoice');
   };
 }
