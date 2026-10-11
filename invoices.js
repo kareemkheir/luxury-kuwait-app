@@ -231,7 +231,7 @@ function start(kind) { restoreCart(kind); const f = KEYS[kind][0]; if (X.S[f] &&
 
 async function customerPick(kind) {
   const { S, top, esc, go, kwd, loadCustomers } = X;
-  const R = kind === 'return', F = KEYS[kind][0], TT = R ? 'Return • مرتجع' : 'New Invoice • فاتورة جديدة';
+  const R = kind === 'return', F = KEYS[kind][0], TT = R ? 'Return • مرتجع' : 'Shelf Check • جرد الرف';
   $('#app').innerHTML = top(TT) + '<div class="wrap"><div class="sub">Loading…</div></div>';
   $('#bk').onclick = () => go('home');
   const C = await loadCustomers(); let q = '', tab = 'new';
@@ -239,7 +239,7 @@ async function customerPick(kind) {
     const t = q.trim().toLowerCase();
     const L = C.filter(c => (c.active !== false || t) && (!t || c.id.includes(t) || (c.en || '').toLowerCase().includes(t) || (c.ar || '').includes(t))).sort((a, b) => (a.en || '').localeCompare(b.en || ''));
     $('#app').innerHTML = top(TT) + `<div class="wrap">
-      <div class="tabs"><button data-t="new" class="${tab === 'new' ? 'on' : ''}">New</button><button data-t="recent" class="${tab === 'recent' ? 'on' : ''}">${R ? 'Recent returns' : 'Recent invoices'}</button></div>
+      <div class="tabs"><button data-t="new" class="${tab === 'new' ? 'on' : ''}">New</button><button data-t="recent" class="${tab === 'recent' ? 'on' : ''}">${R ? 'Recent returns' : 'Invoices'}</button>${R ? '' : `<button data-t="visits" class="${tab === 'visits' ? 'on' : ''}">Visits</button>`}</div>
       ${tab === 'new' ? `<div class="sub">Choose the customer</div><input id="q" placeholder="Search customer…" value="${esc(q)}">
       ${L.map(c => `<div class="card" data-id="${c.id}"><b>${esc(c.en)}</b><div class="ar sub">${esc(c.ar)}</div>${c.disc ? `<span class="pill g">${c.disc}% discount</span>` : ''}</div>`).join('')}` : '<div id="rl"><div class="sub">Loading…</div></div>'}</div>`;
     $('#bk').onclick = () => go('home');
@@ -248,9 +248,9 @@ async function customerPick(kind) {
       const qi = $('#q'); qi.oninput = e => { q = e.target.value; draw(); const n = $('#q'); n.focus(); n.setSelectionRange(q.length, q.length); };
       document.querySelectorAll('.card[data-id]').forEach(c => c.onclick = () => {
         const cu = C.find(x => x.id === c.dataset.id);
-        S[F] = { cust: { id: cu.id, en: cu.en, ar: cu.ar, disc: cu.disc || 0 }, items: [], delivery: iso(new Date(Date.now() + 864e5)), note: '' }; saveCart(kind); cartView(kind);
+        S[F] = { cust: { id: cu.id, en: cu.en, ar: cu.ar, disc: cu.disc || 0 }, items: [], delivery: iso(new Date(Date.now() + 864e5)), note: '', mode: 'shelf' }; saveCart(kind); cartView(kind);
       });
-    } else (R ? recentReturns() : recentList());
+    } else (R ? recentReturns() : tab === 'visits' ? recentVisits() : recentList());
   };
   draw();
 }
@@ -264,14 +264,16 @@ async function cartView(kind) {
   const total = () => r3(cart.items.reduce((a, i) => a + i.q * i.p, 0));
   const draw = () => {
     const pcs = cart.items.reduce((a, i) => a + i.q, 0), ctn = cart.items.reduce((a, i) => a + i.q / i.pk, 0);
-    $('#app').innerHTML = top((R ? 'Return • ' : 'Invoice • ') + esc(cart.cust.en)) + `<div class="wrap">
+    $('#app').innerHTML = top((R ? 'Return • ' : 'Visit • ') + esc(cart.cust.en)) + `<div class="wrap">
       ${cart.cust.disc ? `<div class="pill g" style="margin-bottom:8px">Customer discount ${cart.cust.disc}%</div>` : ''}
+      ${R ? '' : `<div class="card" style="padding:8px"><div class="sub" style="margin-bottom:4px">Scan / tap on an item means:</div><div class="tabs"><button data-md="shelf" class="${cart.mode !== 'order' ? 'on' : ''}">✔ On his shelf • موجود</button><button data-md="order" class="${cart.mode === 'order' ? 'on' : ''}">🛒 Order • طلب</button></div></div>`}
       <div class="grid" style="margin-bottom:10px"><button class="btn" id="sc">📷 Scan</button><button class="btn l" id="se">🔎 Search item</button></div>
       <button class="btn l" id="ph" style="margin-top:0">${R ? '🖼 Photo: barcode or printed item number' : '🖼 Read barcode from photo'}</button><input type="file" id="pf" accept="image/*" multiple style="display:none">
       ${cart.items.length === 0 ? '<div class="card sub">No items yet. Scan a barcode or search for an item.</div>' : ''}
       ${cart.items.map((it, i) => `<div class="card pc">${X.img(it.c)}<div class="pcb"><div class="row"><b>${esc(it.c)}</b><button class="pill r" data-rm="${i}" style="border:0">Remove</button></div>
         <div class="sub">${esc(it.en)}</div><div class="ar sub">${esc(it.ar)}</div>
-        <div class="row" style="margin-top:6px"><div style="flex:1"><label>${R ? 'Pieces returned' : 'Pieces (stock ' + it.stock + ')'}</label><input type="number" inputmode="numeric" data-q="${i}" value="${it.q}"></div>
+        ${R ? '' : `<label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" data-sh="${i}" ${it.shelf ? 'checked' : ''} style="width:24px;height:24px;margin:0"> ✔ Available on his shelf • موجود عنده</label>`}
+        <div class="row" style="margin-top:6px"><div style="flex:1"><label>${R ? 'Pieces returned' : 'Pieces to order (stock ' + it.stock + ')'}</label><input type="number" inputmode="numeric" data-q="${i}" value="${it.q}"></div>
         <button class="btn l" style="width:auto;margin:20px 0 0" data-ctn="${i}">+1 carton<br><span class="sub">(${it.pk} pcs)</span></button></div>
         ${R ? `<div class="row"><input data-nt="${i}" placeholder="Note — write damaged / تالف / K if broken" value="${esc(it.note || '')}" style="flex:1"><button class="btn l" style="width:auto;margin:6px 0" data-dm="${i}">🔨</button></div>${isDamaged(it.note) ? '<span class="pill r">Damaged — will NOT go back to stock</span>' : '<span class="pill g">Goes back to stock</span>'}` : ''}
         <div class="sub">${kwd(it.p)} KWD each • ${(it.q / it.pk).toFixed(2)} cartons • <b>${kwd(it.q * it.p)}</b></div></div>`).join('')}
@@ -279,17 +281,21 @@ async function cartView(kind) {
         <div class="row"><span>Total (KWD)</span><b style="font-size:22px">${kwd(total())}</b></div></div>
       ${R ? '' : `<label>Delivery date • تاريخ التوصيل</label><input type="date" id="dd" value="${cart.delivery}">`}
       <label>Note (optional)</label><input id="nt" value="${esc(cart.note)}">
-      <button class="btn g" id="cr" ${cart.items.length ? '' : 'disabled style="opacity:.5"'}>${R ? 'Create return' : 'Create invoice'}</button>
+      ${R ? '' : `<button class="btn" id="sv" ${cart.items.length ? '' : 'disabled style="opacity:.5"'}>💾 Save visit (shelf + draft order)</button>`}
+      <button class="btn g" id="cr" ${(R ? cart.items.length : cart.items.some(i => i.q > 0)) ? '' : 'disabled style="opacity:.5"'}>${R ? 'Create return' : 'Create invoice from the order'}</button>
       <button class="btn l" id="cn">Cancel / start over</button></div>`;
     $('#bk').onclick = () => { go('home'); };
     document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { cart.items.splice(+b.dataset.rm, 1); saveCart(kind); draw(); });
     document.querySelectorAll('[data-q]').forEach(inp => inp.onchange = () => {
-      const it = cart.items[+inp.dataset.q]; let v = Math.max(1, Math.floor(+inp.value || 1));
+      const it = cart.items[+inp.dataset.q]; let v = Math.max(R ? 1 : 0, Math.floor(+inp.value || (R ? 1 : 0)));
       if (!R && v > it.stock) { v = it.stock; toast(`Only ${it.stock} in stock`); } it.q = v; saveCart(kind); draw();
     });
     document.querySelectorAll('[data-ctn]').forEach(b => b.onclick = () => {
       const it = cart.items[+b.dataset.ctn]; if (!R && it.q + it.pk > it.stock) { toast(`Only ${it.stock} in stock`); it.q = it.stock; } else it.q += it.pk; saveCart(kind); draw();
     });
+    document.querySelectorAll('[data-md]').forEach(b => b.onclick = () => { cart.mode = b.dataset.md; saveCart(kind); draw(); });
+    document.querySelectorAll('[data-sh]').forEach(c => c.onchange = () => { cart.items[+c.dataset.sh].shelf = c.checked; saveCart(kind); });
+    const sv = $('#sv'); if (sv) sv.onclick = saveOnly;
     const dd = $('#dd'); if (dd) dd.onchange = e => { cart.delivery = e.target.value; saveCart(kind); };
     document.querySelectorAll('[data-nt]').forEach(inp => inp.onchange = () => { cart.items[+inp.dataset.nt].note = inp.value; saveCart(kind); draw(); });
     document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { cart.items[+b.dataset.dm].note = 'damaged'; saveCart(kind); draw(); });
@@ -306,7 +312,7 @@ async function cartView(kind) {
         },
         onUnknown: code => linkBarcode(code),
         getQty: c => (cart.items.find(i => i.c === c) || {}).q || 0,
-        setQty: (c, n) => { const it = cart.items.find(i => i.c === c); if (!it) return 0; n = Math.max(1, Math.floor(n) || 1); if (!R && n > it.stock) { toast(`Only ${it.stock} in stock`); n = it.stock; } it.q = n; saveCart(kind); draw(); return n; }
+        setQty: (c, n) => { const it = cart.items.find(i => i.c === c); if (!it) return 0; n = Math.max(R ? 1 : 0, Math.floor(n) || 0); if (!R && n > it.stock) { toast(`Only ${it.stock} in stock`); n = it.stock; } it.q = n; saveCart(kind); draw(); return n; }
       });
     };
     $('#se').onclick = searchItem;
@@ -361,37 +367,63 @@ async function cartView(kind) {
       });
     };
   }
-  function addItem(code) {
+  function addItem(code, toggle) {
     const p = by(code); if (!p) return `Not found: ${code}`;
-    if (!R && p.q <= 0) return `${p.c} is OUT OF STOCK`;
     const ex = cart.items.find(i => i.c === p.c);
+    if (!R && cart.mode !== 'order') {   // shelf check: mark the item as available on his shelf (stock does not matter)
+      if (ex) { if (toggle && ex.shelf) { ex.shelf = false; if (!ex.q) cart.items.splice(cart.items.indexOf(ex), 1); saveCart(kind); draw(); return `Removed ${p.c} from shelf list`; } ex.shelf = true; }
+      else cart.items.push({ c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: r3(p.p * (1 - (cart.cust.disc || 0) / 100)), q: 0, shelf: true, note: '' });
+      saveCart(kind); draw(); return `Added ${p.c} (on shelf ✔)`;
+    }
+    if (!R && p.q <= 0) return `${p.c} is OUT OF STOCK`;
     if (ex) { if (!R && ex.q >= ex.stock) return `Only ${ex.stock} in stock`; ex.q += 1; }
-    else cart.items.push({ c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: r3(p.p * (1 - (cart.cust.disc || 0) / 100)), q: 1, note: '' });
+    else cart.items.push({ c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: r3(p.p * (1 - (cart.cust.disc || 0) / 100)), q: 1, shelf: false, note: '' });
     saveCart(kind); draw(); return `Added ${p.c}`;
   }
   function searchItem() {
     const PV = P.filter(p => !X.isHidden(p) && (R || p.q > 0));
     let cat = 'all', sub = 'all', t = '', lim = 40;
+    const PV0 = P.filter(p => !X.isHidden(p));
     const m = X.modal(`<h3>Add items</h3><input id="si" placeholder="Item number or name…" autofocus>
       <div class="tabs cats" id="ct"></div><div class="tabs cats" id="cs"></div><div id="sr"></div><button class="btn g" id="cl">Done</button>`);
     const kinds = [['all', 'All'], ...X.CATLIST];
     const drawCats = () => { m.querySelector('#ct').innerHTML = kinds.map(([k, n]) => `<button data-k="${k}" class="${cat === k ? 'on' : ''}">${n}</button>`).join(''); m.querySelectorAll('#ct button').forEach(b => b.onclick = () => { cat = b.dataset.k; sub = 'all'; lim = 40; drawCats(); drawList(); }); drawSubs(); };
     const drawSubs = () => { const L = X.SUBS[cat]; m.querySelector('#cs').innerHTML = L ? [['all', 'All'], ...L].map(([k, n]) => `<button data-s="${k}" class="${sub === k ? 'on' : ''}">${n}</button>`).join('') : ''; m.querySelectorAll('#cs button').forEach(b => b.onclick = () => { sub = b.dataset.s; lim = 40; drawSubs(); drawList(); }); };
     const drawList = () => {
-      const L = PV.filter(p => (cat === 'all' || X.catOf(p) === cat) && (sub === 'all' || X.subOf(p) === sub) && (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || Object.keys(S.barcodes || {}).some(b => S.barcodes[b] === p.c && (((S.barcodeCodes || {})[b] || b).toLowerCase().includes(t)))));
+      const L = (!R && cart.mode !== 'order' && t.length >= 2 ? PV0 : PV).filter(p => (cat === 'all' || X.catOf(p) === cat) && (sub === 'all' || X.subOf(p) === sub) && (!t || p.c.toLowerCase().includes(t) || (p.en || '').toLowerCase().includes(t) || (p.ar || '').includes(t) || Object.keys(S.barcodes || {}).some(b => S.barcodes[b] === p.c && (((S.barcodeCodes || {})[b] || b).toLowerCase().includes(t)))));
       if (cat !== 'all' && X.SUBS[cat]) L.sort((x, y) => X.subRank(x) - X.subRank(y) || x.c.localeCompare(y.c));
       if (cat === 'all' && t.length < 2) { m.querySelector('#sr').innerHTML = '<div class="sub">Type to search, or pick a category to browse it.</div>'; return; }
-      m.querySelector('#sr').innerHTML = L.slice(0, lim).map(p => { const n = (cart.items.find(i => i.c === p.c) || {}).q || 0; return `<div class="card pc" data-c="${esc(p.c)}">${X.img(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b><span>${n ? `<span class="pill o">in cart ${n}</span> ` : ''}<span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div></div>`; }).join('') + (L.length > lim ? `<button class="btn l" id="mr">Show more (${L.length - lim})</button>` : '') + (L.length === 0 ? '<div class="card">No items found.</div>' : '');
-      m.querySelectorAll('[data-c]').forEach(c => c.onclick = () => { const r = addItem(c.dataset.c); toast(r); if (r.startsWith('Added')) { const y = m.querySelector('div').scrollTop; drawList(); m.querySelector('div').scrollTop = y; } });
+      m.querySelector('#sr').innerHTML = L.slice(0, lim).map(p => { const ci = cart.items.find(i => i.c === p.c) || {}, n = ci.q || 0, sh = ci.shelf; return `<div class="card pc" data-c="${esc(p.c)}">${X.img(p.c)}<div class="pcb"><div class="row"><b>${esc(p.c)}</b><span>${sh ? '<span class="pill g">✔ shelf</span> ' : ''}${n ? `<span class="pill o">in cart ${n}</span> ` : ''}<span class="pill ${p.q <= 0 ? 'r' : 'g'}">${p.q <= 0 ? 'OUT' : p.q}</span></span></div><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div></div>`; }).join('') + (L.length > lim ? `<button class="btn l" id="mr">Show more (${L.length - lim})</button>` : '') + (L.length === 0 ? '<div class="card">No items found.</div>' : '');
+      m.querySelectorAll('[data-c]').forEach(c => c.onclick = () => { const r = addItem(c.dataset.c, true); toast(r); if (!r.startsWith('Not found') && !r.startsWith('Only') && !r.includes('OUT OF')) { const y = m.querySelector('div').scrollTop; drawList(); m.querySelector('div').scrollTop = y; } });
       const mr = m.querySelector('#mr'); if (mr) mr.onclick = () => { lim += 40; const y = m.querySelector('div').scrollTop; drawList(); m.querySelector('div').scrollTop = y; };
     };
     m.querySelector('#cl').onclick = () => m.remove();
     m.querySelector('#si').oninput = e => { t = e.target.value.trim().toLowerCase(); lim = 40; drawList(); };
     drawCats(); drawList();
   }
+  async function saveVisit(invNo) {   // one record per visit: what was on his shelf + the draft order (or the invoice number)
+    try {
+      const id = cart.visitId || doc(collection(X.db, 'shelf')).id, now = new Date();
+      const rec = { cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', shelf: cart.items.filter(i => i.shelf).map(i => i.c),
+        draft: invNo ? [] : cart.items.filter(i => i.q > 0).map(i => ({ c: i.c, q: i.q })), invoiced: invNo || null, note: cart.note || '', delivery: cart.delivery || '' };
+      if (!cart.visitId) Object.assign(rec, { by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now) });
+      await setDoc(doc(X.db, 'shelf', id), rec, { merge: true }); return true;
+    } catch (e) { console.error(e); return false; }
+  }
+  async function saveOnly() {
+    if (!cart.items.length) return;
+    const b = $('#sv'); b.disabled = true; b.textContent = 'Saving…';
+    if (!(await saveVisit(null))) { b.disabled = false; b.textContent = '💾 Save visit (shelf + draft order)'; return toast('Could not save the visit. Try again.'); }
+    const n = cart.items.filter(i => i.shelf).length, o = cart.items.filter(i => i.q > 0).length, cu = cart.cust.en;
+    logEvent('visit', { cust: cart.cust.id, custEn: cu, shelf: n });
+    S[F] = null; saveCart(kind);
+    $('#app').innerHTML = top('Visit saved ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">🧺</div><h2>${esc(cu)}</h2><div>${n} item(s) on his shelf</div><div class="sub">${o ? o + ' item(s) saved as a draft order — open it from the Visits tab to make the invoice' : 'No order'}</div></div>
+      <button class="btn g" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
+    $('#bk').onclick = () => go('home'); $('#nw').onclick = () => go('invoice'); $('#hm').onclick = () => go('home');
+  }
   async function create() {
     const btn = $('#cr'); btn.disabled = true; btn.textContent = 'Creating…';
-    const items = cart.items.map(i => ({ c: i.c, en: i.en, pk: i.pk, q: i.q, p: i.p, list: i.list }));
+    const items = cart.items.filter(i => i.q > 0).map(i => ({ c: i.c, en: i.en, pk: i.pk, q: i.q, p: i.p, list: i.list }));
     const now = new Date(); let inv;
     try {
       await runTransaction(X.db, async tx => {
@@ -411,6 +443,7 @@ async function cartView(kind) {
       if (String(e.message).startsWith('STOCK:')) { await loadProducts(true); return alert('Not enough stock for ' + e.message.slice(6) + '. Stock was updated; please check quantities.'); }
       console.error(e); return toast('Could not create invoice. Try again.');
     }
+    await saveVisit(inv.no);
     S.products = null; S.cart = null; saveCart('invoice'); logEvent('invoice', { ref: inv.no, cust: inv.cust, custEn: inv.custEn, total: inv.total }); done(inv);
   }
   async function createReturn() {
@@ -441,7 +474,7 @@ function done(inv) {
   $('#app').innerHTML = top('Invoice created ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">✅</div><h2>${esc(inv.no)}</h2>
     <div>${esc(inv.custEn)}</div><div class="ar sub">${esc(inv.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(inv.total)} KWD</div>
     <div class="sub">${inv.pieces} pieces • ${inv.cartons.toFixed(2)} cartons</div></div>
-    <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New invoice</button><button class="btn l" id="hm">Home</button></div>`;
+    <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
   $('#bk').onclick = () => go('home');
   const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
   $('#sh').onclick = () => run('share'); $('#dl').onclick = () => run('download');
@@ -458,6 +491,34 @@ async function recentList() {
   $('#rl').innerHTML = L.length ? L.map(i => `<div class="card" data-id="${i.id}"><div class="row"><b>${esc(i.no)}</b><span class="pill ${i.status === 'cancelled' ? 'r' : 'g'}">${i.status === 'cancelled' ? 'CANCELLED' : kwd(i.total)}</span></div>
     <div>${esc(i.custEn)}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • delivery ${esc(i.delivery)}</div></div>`).join('') : '<div class="card sub">No invoices yet.</div>';
   document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => openInvoice(L.find(i => i.id === c.dataset.id)));
+}
+
+async function recentVisits() {
+  const { S, esc } = X;
+  let L;
+  try { L = (await getDocs(query(collection(X.db, 'shelf'), orderBy('created', 'desc'), limit(80)))).docs.map(d => ({ id: d.id, ...d.data() })); }
+  catch (e) { return ($('#rl').innerHTML = '<div class="card">Could not load visits.</div>'); }
+  if (S.user.role === 'sales') L = L.filter(v => v.by === S.user.uid);
+  $('#rl').innerHTML = L.length ? L.map(v => `<div class="card" data-id="${v.id}"><div class="row"><b>${esc(v.custEn)}</b><span class="pill ${v.invoiced ? 'g' : (v.draft || []).length ? 'o' : 'm'}">${v.invoiced ? esc(v.invoiced) : (v.draft || []).length ? 'draft order' : 'visit'}</span></div>
+    <div class="sub">${esc(v.date)} • by ${esc(v.byName)} • ${(v.shelf || []).length} on shelf${(v.draft || []).length ? ' • ' + v.draft.length + ' ordered' : ''}</div></div>`).join('') : '<div class="card sub">No visits yet.</div>';
+  document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => openVisit(L.find(v => v.id === c.dataset.id)));
+}
+async function openVisit(v) {
+  const { S, esc } = X; await X.loadProducts();
+  const P = c => S.products.find(p => p.c === c);
+  const m = X.modal(`<h3>${esc(v.custEn)}</h3><div class="sub">${esc(v.date)} • by ${esc(v.byName)}${v.invoiced ? ' • invoiced ' + esc(v.invoiced) : ''}</div>
+    <b>On his shelf (${(v.shelf || []).length})</b>${(v.shelf || []).map(c => `<div class="sub">✔ ${esc(c)} ${esc((P(c) || {}).en || '')}</div>`).join('') || '<div class="sub">—</div>'}
+    <b style="display:block;margin-top:8px">Draft order (${(v.draft || []).length})</b>${(v.draft || []).map(d => `<div class="sub">${esc(d.c)} × ${d.q}</div>`).join('') || '<div class="sub">—</div>'}
+    ${v.invoiced ? '' : '<button class="btn g" id="op">Open to edit / make the invoice</button>'}<button class="btn l" id="cl">Close</button>`);
+  m.querySelector('#cl').onclick = () => m.remove();
+  const op = m.querySelector('#op'); if (!op) return;
+  op.onclick = async () => {
+    const cu = (await X.loadCustomers()).find(c => c.id === v.cust) || {}, disc = cu.disc || 0, items = [], miss = [];
+    const add = (c, q, sh) => { let it = items.find(i => i.c === c); if (!it) { const p = P(c); if (!p) return miss.push(c); it = { c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: Math.round(p.p * (1 - disc / 100) * 1000) / 1000, q: 0, shelf: false, note: '' }; items.push(it); } if (q) it.q = Math.min(q, Math.max(0, it.stock)); if (sh) it.shelf = true; };
+    (v.shelf || []).forEach(c => add(c, 0, true)); (v.draft || []).forEach(d => add(d.c, d.q, false));
+    X.S[KEYS.invoice[0]] = { cust: { id: v.cust, en: v.custEn, ar: v.custAr || '', disc }, items, delivery: v.delivery || iso(new Date(Date.now() + 864e5)), note: v.note || '', mode: 'order', visitId: v.id };
+    saveCart('invoice'); m.remove(); if (miss.length) X.toast('Not found: ' + miss.join(', ')); cartView('invoice');
+  };
 }
 
 function openInvoice(inv) {

@@ -49,6 +49,11 @@ service cloud.firestore {
       allow create: if isAdmin() || (isStaff() && role() == 'sales');
       allow update, delete: if isAdmin();
     }
+    match /shelf/{id} {
+      allow read: if isAdmin() || (isStaff() && role() == 'sales');
+      allow create: if isAdmin() || (isStaff() && role() == 'sales' && request.resource.data.by == request.auth.uid);
+      allow update: if isAdmin() || (isStaff() && role() == 'sales' && resource.data.by == request.auth.uid);
+    }
     match /cheques/{id} {
       allow read: if isAdmin() || (isStaff() && role() == 'sales');
       allow write: if isAdmin();

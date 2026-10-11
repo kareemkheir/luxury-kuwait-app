@@ -3,7 +3,7 @@ import { sendFile } from './invoices.js';
 
 let X;
 export function initBackup(ctx) { X = ctx; }
-const COLS = ['products', 'customers', 'invoices', 'returns', 'cheques', 'barcodes', 'counters', 'users', 'events', 'config'];
+const COLS = ['products', 'customers', 'invoices', 'returns', 'cheques', 'barcodes', 'shelf', 'counters', 'users', 'events', 'config'];
 const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}.${p(d.getMinutes())}`; };
 const loadScript = u => new Promise((res, rej) => { if (window.ExcelJS) return res(); const s = document.createElement('script'); s.src = u; s.onload = res; s.onerror = () => rej(new Error('load')); document.head.appendChild(s); });
 const flat = v => v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : v);
@@ -43,7 +43,7 @@ export async function backupHome() {
     <div class="card"><b>Best time to back up</b>
       <p class="sub">• Once a week, at the end of the day (after the last invoice).<br>• Always before: deleting items, updating stock from a file, or any big change.<br>• Keep the files in Google Drive or send them to yourself on WhatsApp / email.</p></div>
     <div class="card" style="border:1px solid #c0392b"><b style="color:#c0392b">Delete test data</b>
-      <p class="sub">Deletes ALL invoices, returns, cheques and activity history, and restarts invoice numbering from 1. Stock, items, customers (with their opening balances) and users stay. Use once before going live. A backup downloads first.</p>
+      <p class="sub">Deletes ALL invoices, returns, cheques, shelf visits and activity history, and restarts invoice numbering from 1. Stock, items, customers (with their opening balances) and users stay. Use once before going live. A backup downloads first.</p>
       <button class="btn" id="bk2" style="background:#c0392b;color:#fff">🗑 Delete test data & reset numbers</button></div></div>`;
   const bm = document.getElementById('bm'), setMsg = t => bm.textContent = t;
   document.getElementById('bk1').onclick = async e => {
@@ -58,7 +58,7 @@ export async function backupHome() {
     try {
       const data = await doBackup(setMsg);
       const refs = [];
-      for (const c of ['invoices', 'returns', 'cheques', 'events', 'counters']) (data[c] || []).forEach(r => refs.push(doc(X.db, c, r._id)));
+      for (const c of ['invoices', 'returns', 'cheques', 'shelf', 'events', 'counters']) (data[c] || []).forEach(r => refs.push(doc(X.db, c, r._id)));
       for (let i = 0; i < refs.length; i += 400) { setMsg(`Deleting… ${Math.min(i + 400, refs.length)}/${refs.length}`); const b = writeBatch(X.db); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit(); }
       setMsg(`✅ Done. ${refs.length} test records deleted; next invoice will be number 1.`);
     } catch (er) { console.error(er); setMsg('❌ Failed — nothing more was changed. Try again.'); }
