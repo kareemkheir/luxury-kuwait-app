@@ -50,7 +50,7 @@ const toDelete = p => isHidden(p) && p.hidden === undefined && HIDDEN.has(p.c);
 let CATMAP = {}; const READY2 = jget('./cats.json').then(m => { if (m) CATMAP = m; });
 const CATLIST = [['lav', 'LAV'], ['flask', 'Flask • مطارات'], ['hascevher', 'Hascevher'], ['porcelain', 'Porcelain • بورسلين'], ['tea', 'Tea Set • طقم شاي'], ['tray', 'Tray • صواني'], ['others', 'Others • أخرى']];
 let SUBMAP = {}; jget('./subcats.json').then(m => { if (m) SUBMAP = m; });
-const SUBS = { flask: [['asayel', 'Asayel'], ['asil', 'Asil'], ['basma', 'Basma'], ['fayrouz', 'Fayrouz'], ['jood', 'Jood'], ['joud steel', 'Joud steel'], ['lara', 'Lara'], ['lea', 'Lea'], ['nakhba', 'Nakhba'], ['orchid', 'Orchid'], ['ostura', 'Ostura'], ['paris', 'Paris'], ['rawnaq', 'Rawnaq'], ['sahar', 'Sahar'], ['sheikha', 'Sheikha'], ['sidra', 'Sidra'], ['other', 'Others']],
+const SUBS = { flask: [['asayel', 'Asayel'], ['asil', 'Asil'], ['fayrouz', 'Fayrouz'], ['jood', 'Jood'], ['joud steel', 'Joud steel'], ['lara', 'Lara'], ['lea', 'Lea'], ['nakhba', 'Nakhba'], ['orchid', 'Orchid'], ['ostura', 'Ostura'], ['paris', 'Paris'], ['rawnaq', 'Rawnaq'], ['sahar', 'Sahar'], ['sheikha', 'Sheikha'], ['sidra', 'Sidra'], ['other', 'Others']],
   hascevher: [['pots', 'قدور'], ['fry', 'مقالي'], ['other', 'Others']],
   lav: [['tumbler', 'كاسات'], ['stem', 'كاسات بقاعدة'], ['tea', 'استكانة / صحن'], ['mug', 'ماج'], ['dolka', 'دولكة'], ['other', 'Others']] };
 const subOf = p => p.sub || SUBMAP[p.c] || 'other';
