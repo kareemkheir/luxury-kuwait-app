@@ -32,9 +32,9 @@ const pw = pin => pin + '-kw';
 
 const S = { user: null, products: null, customers: null, lowLimit: 5, view: 'home' };
 const LOW = () => S.lowLimit;
-let IMGMAP = {}, HIDDEN = new Set(), HIDEONLY = new Set(), RENAMES = {}, ARFIX = {};
+let IMGMAP = {}, HIDDEN = new Set(), HIDEONLY = new Set(), RENAMES = {}, ARFIX = {}, FDESC = {};
 const jget = u => fetch(u, { cache: 'no-store' }).then(r => r.json()).catch(() => null);
-const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./hiddenonly.json').then(m => { if (m) HIDEONLY = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; }), jget('./arfix.json').then(m => { if (m) ARFIX = m; })]);
+const READY = Promise.all([jget('./imgmap.json').then(m => { if (m) IMGMAP = m; }), jget('./hidden.json').then(m => { if (m) HIDDEN = new Set(m); }), jget('./hiddenonly.json').then(m => { if (m) HIDEONLY = new Set(m); }), jget('./renames.json').then(m => { if (m) RENAMES = m; }), jget('./arfix.json').then(m => { if (m) ARFIX = m; }), jget('./flaskdesc.json').then(m => { if (m) FDESC = m; })]);
 const isHidden = p => p.hidden === undefined ? (HIDDEN.has(p.c) || HIDEONLY.has(p.c)) : !!p.hidden;
 const toDelete = p => isHidden(p) && p.hidden === undefined && HIDDEN.has(p.c);
 let CATMAP = {}; const READY2 = jget('./cats.json').then(m => { if (m) CATMAP = m; });
@@ -146,7 +146,7 @@ async function loadProducts(force) {
   if (S.products && !force) return S.products;
   const q = await getDocs(collection(db, 'products'));
   await READY; await READY2;
-  S.products = q.docs.map(d => { const x = { id: d.id, ...d.data() }; if (RENAMES[x.c]) x.c = RENAMES[x.c]; if (ARFIX[x.c] && !x.arEdited) x.ar = ARFIX[x.c]; return x; });
+  S.products = q.docs.map(d => { const x = { id: d.id, ...d.data() }; if (RENAMES[x.c]) x.c = RENAMES[x.c]; if (ARFIX[x.c] && !x.arEdited) x.ar = ARFIX[x.c]; const f = FDESC[x.c]; if (f) { if (!x.enEdited) x.en = f.en; if (!x.arEdited) x.ar = f.ar; } return x; });
   return S.products;
 }
 async function loadBarcodes(force) {
@@ -220,7 +220,7 @@ async function stock() {
       } catch (e) { console.error(e); toast('Delete failed — nothing more was removed'); draw(); }
     };
     if (admin) {
-      const run = async mode => { try { const d = new Date(), n = `Stock ${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}.xlsx`; const by = {}; Object.keys(IB).forEach(k => by[k] = IB[k].map(b => b.code)); await sendFile(await buildStockExcel(P, by), n, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
+      const run = async mode => { try { const d = new Date(), n = `Stock ${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}.xlsx`; const by = {}; Object.keys(IB).forEach(k => by[k] = IB[k].map(b => b.code)); await sendFile(await buildStockExcel(P, by, p => isHidden(p) ? (toDelete(p) ? 'MARKED FOR DELETION — remove from your files' : 'HIDDEN — remove from your files') : ''), n, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
       document.getElementById('up').onclick = () => stockUpdate(() => { P = S.products; IB = invBarcodes(); draw(); });
       document.getElementById('xd').onclick = () => run('download'); document.getElementById('xs').onclick = () => run('share');
     }
@@ -291,7 +291,7 @@ function editProduct(p, after) {
   m.querySelector('#cl').onclick = () => m.remove();
   m.querySelector('#hd').onclick = async () => { const h = !isHidden(p); try { await updateDoc(doc(db, 'products', p.id), { hidden: h }); p.hidden = h; m.remove(); toast(h ? 'Hidden' : 'Visible again'); after(); } catch (e) { toast('Could not save'); } };
   m.querySelector('#sv').onclick = async () => {
-    const v = { q: Math.floor(+m.querySelector('#eq').value || 0), p: +m.querySelector('#ep').value || 0, pk: Math.max(1, +m.querySelector('#ek').value || 1), en: m.querySelector('#en').value, ar: m.querySelector('#ea').value, cat: m.querySelector('#ec').value }; if (m.querySelector('#es')) v.sub = m.querySelector('#es').value; else if (v.cat !== catOf(p)) v.sub = 'other';
+    const v = { q: Math.floor(+m.querySelector('#eq').value || 0), p: +m.querySelector('#ep').value || 0, pk: Math.max(1, +m.querySelector('#ek').value || 1), en: m.querySelector('#en').value, ar: m.querySelector('#ea').value, ...(m.querySelector('#en').value !== p.en ? { enEdited: true } : {}), ...(m.querySelector('#ea').value !== p.ar ? { arEdited: true } : {}), cat: m.querySelector('#ec').value }; if (m.querySelector('#es')) v.sub = m.querySelector('#es').value; else if (v.cat !== catOf(p)) v.sub = 'other';
     try { await updateDoc(doc(db, 'products', p.id), v); Object.assign(p, v); m.remove(); toast('Saved'); after(); } catch (e) { toast('Could not save'); }
   };
 }

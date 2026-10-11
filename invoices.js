@@ -36,13 +36,13 @@ export async function buildExcel(items, name) {
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
-export async function buildStockExcel(products, inv) {
+export async function buildStockExcel(products, inv, flag) {
   await loadScript(EXCELJS);
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Stock');
-  ws.columns = [{ width: 18 }, { width: 30 }, { width: 36 }, { width: 10 }, { width: 12 }, { width: 10 }, { width: 22 }, { width: 40 }];
-  const h = ws.addRow(['Item Number', 'Arabic Name', 'English Name', 'Packing', 'Stock Qty', 'Price (KWD)', 'Barcode (item number)', 'Added Barcodes']); h.font = { bold: true };
+  ws.columns = [{ width: 18 }, { width: 30 }, { width: 36 }, { width: 10 }, { width: 12 }, { width: 10 }, { width: 22 }, { width: 40 }, { width: 44 }];
+  const h = ws.addRow(['Item Number', 'Arabic Name', 'English Name', 'Packing', 'Stock Qty', 'Price (KWD)', 'Barcode (item number)', 'Added Barcodes', 'Status']); h.font = { bold: true };
   [...products].sort((a, b) => String(a.c).localeCompare(String(b.c))).forEach(p => {
-    const r = ws.addRow([p.c, p.ar || '', p.en || '', p.pk, p.q, p.p, p.c, (inv[p.c] || []).join(', ')]);
+    const r = ws.addRow([p.c, p.ar || '', p.en || '', p.pk, p.q, p.p, p.c, (inv[p.c] || []).join(', '), flag ? flag(p) : '']);
     r.getCell(7).numFmt = '@'; r.getCell(8).numFmt = '@'; r.getCell(6).numFmt = '0.000';
   });
   ws.views = [{ state: 'frozen', ySplit: 1 }];
