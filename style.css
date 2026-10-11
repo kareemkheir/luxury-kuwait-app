@@ -56,3 +56,25 @@ img.pt{width:56px;height:72px;object-fit:contain;background:#fff;border-radius:8
 .ot td{padding:8px 6px;border-bottom:1px solid #eee;vertical-align:middle;word-break:break-all}
 .ot td input{width:56px;padding:6px;margin:0 4px 0 0;text-align:center}
 .ot tfoot td{background:#f9f6ee;border-bottom:0}
+
+.cp{padding:4px 8px;margin-bottom:4px;gap:8px;border-radius:10px}
+.cp img.pt{width:38px;height:48px}
+.cp .t1{font-size:13px;font-weight:700;line-height:1.3}
+.cp .t1 .pill{font-size:10px;padding:1px 6px}
+.cp .sub{font-size:11px;line-height:1.25;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp .ctl{display:flex;flex-direction:column;gap:3px;align-items:stretch;flex:none;width:96px}
+.cp .st{display:flex;align-items:center;justify-content:space-between;font-size:14px}
+.cb{border:0;border-radius:8px;padding:5px 8px;font-size:13px;font-weight:700;background:#e8eefc;color:#1f5bd8;margin:0;width:auto}
+.cb.on{background:#1b8a5a;color:#fff}
+.cp .st .cb{padding:4px 11px;font-size:15px}
+
+.modal>div:has(#sr){padding:10px 10px 12px}
+.modal .tabs.cats{margin:4px 0}
+.modal .tabs.cats button{padding:6px 11px;font-size:13px}
+.cp{padding:3px 8px;margin-bottom:3px}
+.cp img.pt{width:34px;height:44px}
+.cp .cb{padding:3px 8px;font-size:12px}
+.cp .st .cb{padding:1px 11px;font-size:14px}
+.cp .ctl{gap:2px;width:92px}
+.cp .t1{font-size:12.5px;line-height:1.2}
+.cp .sub{font-size:10.5px;line-height:1.15}
