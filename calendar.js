@@ -48,7 +48,7 @@ export async function calendarHome() {
   function open(i) {
     const st = i.deliveryStatus || 'pending', admin = role === 'admin';
     const m = X.modal(`<h3 class="ar">${esc(i.custAr || i.custEn)}</h3><div class="sub">${esc(i.custEn)} • ${esc(i.no)} • ${esc(i.delivery)}</div>${stLabel(i)}
-      <div style="margin:8px 0">${i.items.map(x => `<div class="row"><span>${esc(x.c)}</span><b>${x.q} <span class="sub">(${(x.q / x.pk).toFixed(x.q % x.pk ? 1 : 0)} ctn)</span></b></div><div class="sub">${esc(x.en)}</div>`).join('')}</div>
+      <div style="margin:8px 0">${i.items.map(x => `<div class="row"><span>${esc(x.c)}</span><b>${x.q} <span class="sub">(${(x.q / (x.lav ? 1 : x.pk)).toFixed(x.lav || !(x.q % x.pk) ? 0 : 1)} ctn)</span></b></div><div class="sub">${esc(x.en)}</div>`).join('')}</div>
       <div class="row"><span>القطع • Pieces</span><b>${i.pieces}</b></div><div class="row"><span>الكراتين • Cartons</span><b>${i.cartons.toFixed(2)}</b></div>
       ${showMoney ? `<div class="row"><span>Total</span><b>${kwd(i.total)} KWD</b></div>` : ''}${i.note ? `<div class="sub">📝 ${esc(i.note)}</div>` : ''}
       ${canAct && st === 'pending' ? `<button class="btn g" data-a="delivered">✅ تم التسليم</button><button class="btn o" data-a="delay">🕒 تأجيل التوصيل</button><button class="btn r" data-a="cancel">❌ إلغاء من العميل</button>` : ''}

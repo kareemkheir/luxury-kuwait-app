@@ -11,6 +11,8 @@ const dmy = d => `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const safe = s => String(s).replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
 const pid = c => (((X.S.products || []).find(p => p.c === c)) || {}).id || c;   // product document id for an item code (they differ for renamed items)
+const lavOf = c => { const p = (X.S.products || []).find(p => p.c === c); return !!p && X.catOf(p) === 'lav'; };
+const cf = i => (i.lav ?? lavOf(i.c)) ? 1 : (i.pk || 1);   // LAV: every unit added is already one carton (not divided by packing)
 const loaded = {};
 function loadScript(url) {
   return loaded[url] ||= new Promise((res, rej) => { const s = document.createElement('script'); s.src = url; s.onload = res; s.onerror = () => rej(new Error('load ' + url)); document.head.appendChild(s); });
@@ -26,11 +28,11 @@ export async function buildExcel(items, name) {
   const h = ws.addRow(['Item No.', 'Quantity', 'Price']); h.font = { bold: true };
   items.forEach(it => { const r = ws.addRow([String(it.c), it.q, it.p]); r.getCell(3).numFmt = '0.000'; r.getCell(1).numFmt = '@'; });
   const n = items.length, last = n + 1, t = n + 3;
-  const qty = items.reduce((a, i) => a + i.q, 0), price = r3(items.reduce((a, i) => a + i.q * i.p, 0)), cart = items.reduce((a, i) => a + i.q / (i.pk || 1), 0);
+  const qty = items.reduce((a, i) => a + i.q, 0), price = r3(items.reduce((a, i) => a + i.q * i.p, 0)), cart = items.reduce((a, i) => a + i.q / cf(i), 0);
   const put = (row, label, formula, result, fmt) => { ws.getCell(`A${row}`).value = label; ws.getCell(`A${row}`).font = { bold: true }; const c = ws.getCell(`B${row}`); c.value = { formula, result }; c.font = { bold: true }; if (fmt) c.numFmt = fmt; };
   put(t, 'Final Quantity', `SUM(B2:B${last})`, qty);
   put(t + 1, 'Final Price (KWD)', `SUMPRODUCT(B2:B${last},C2:C${last})`, price, '0.000');
-  put(t + 2, 'Cartons', items.map((it, i) => `B${i + 2}/${it.pk || 1}`).join('+'), cart, '0.##');
+  put(t + 2, 'Cartons', items.map((it, i) => `B${i + 2}/${cf(it)}`).join('+'), cart, '0.##');
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
@@ -266,7 +268,7 @@ async function cartView(kind) {
   const P = S.products, by = id => { const k = String(id).trim(); let p = P.find(p => p.id === k || p.c.toLowerCase() === k.toLowerCase()); if (!p && S.barcodes[bkey(k)]) p = P.find(p => p.c === S.barcodes[bkey(k)]); return p; };
   const total = () => r3(cart.items.reduce((a, i) => a + i.q * i.p, 0));
   const draw = () => {
-    const pcs = cart.items.reduce((a, i) => a + i.q, 0), ctn = cart.items.reduce((a, i) => a + i.q / i.pk, 0);
+    const pcs = cart.items.reduce((a, i) => a + i.q, 0), ctn = cart.items.reduce((a, i) => a + i.q / cf(i), 0);
     $('#app').innerHTML = top((R ? 'Return • ' : 'Visit • ') + esc(cart.cust.en)) + `<div class="wrap">
       ${cart.cust.disc ? `<div class="pill g" style="margin-bottom:8px">Customer discount ${cart.cust.disc}%</div>` : ''}
       <div class="grid" style="margin-bottom:10px"><button class="btn" id="sc">📷 Scan</button><button class="btn l" id="se">🔎 Search item</button></div>
@@ -278,7 +280,7 @@ async function cartView(kind) {
         <div class="row" style="margin-top:6px"><div style="flex:1"><label>${R ? 'Pieces returned' : 'Pieces to order (stock ' + it.stock + ')'}</label><input type="number" inputmode="numeric" data-q="${i}" value="${it.q}"></div>
         <button class="btn l" style="width:auto;margin:20px 0 0" data-ctn="${i}">+1 carton<br><span class="sub">(${it.pk} pcs)</span></button></div>
         ${R ? `<div class="row"><input data-nt="${i}" placeholder="Note — write damaged / تالف / K if broken" value="${esc(it.note || '')}" style="flex:1"><button class="btn l" style="width:auto;margin:6px 0" data-dm="${i}">🔨</button></div>${isDamaged(it.note) ? '<span class="pill r">Damaged — will NOT go back to stock</span>' : '<span class="pill g">Goes back to stock</span>'}` : ''}
-        <div class="sub">${kwd(it.p)} KWD each • ${(it.q / it.pk).toFixed(2)} cartons • <b>${kwd(it.q * it.p)}</b></div></div>`).join('') : `${(() => { const O = cart.items.map((it, i) => ({ it, i })).filter(x => x.it.q > 0), Sh = cart.items.map((it, i) => ({ it, i })).filter(x => x.it.shelf);
+        <div class="sub">${kwd(it.p)} KWD each • ${(it.q / cf(it)).toFixed(2)} cartons • <b>${kwd(it.q * it.p)}</b></div></div>`).join('') : `${(() => { const O = cart.items.map((it, i) => ({ it, i })).filter(x => x.it.q > 0), Sh = cart.items.map((it, i) => ({ it, i })).filter(x => x.it.shelf);
         return `${O.length ? `<table class="ot"><thead><tr><th>Item no.</th><th>Qty</th><th>Packing</th><th>Price</th></tr></thead><tbody>${O.map(({ it, i }) => `<tr><td><b>${esc(it.c)}</b>${it.shelf ? ' <span class="pill g">✔</span>' : ''}</td><td><input type="number" inputmode="numeric" data-q="${i}" value="${it.q}"><button class="pill m" data-ctn="${i}" style="border:0">+ctn</button></td><td>${it.pk}</td><td>${kwd(it.p)}</td></tr>`).join('')}</tbody>
           <tfoot><tr><td><b>TOTAL</b></td><td>${pcs}</td><td><b>${ctn.toFixed(2)}</b><br><span class="sub">cartons</span></td><td><b>${kwd(total())}</b><br><span class="sub">KWD</span></td></tr></tfoot></table>` : ''}
         ${Sh.length ? `<h3 style="margin:14px 0 4px">✔ متوفر عنده (${Sh.length})</h3>${Sh.map(({ it, i }) => `<div class="row" style="padding:4px 0;border-bottom:1px solid #eee"><span><b>${esc(it.c)}</b> <span class="sub">${esc(it.en)}</span></span><label style="margin:0"><input type="checkbox" data-sh="${i}" checked style="width:22px;height:22px;margin:0"></label></div>`).join('')}` : ''}`; })()}`}
@@ -296,7 +298,7 @@ async function cartView(kind) {
       if (!R && v > it.stock) { v = it.stock; toast(`Only ${it.stock} in stock`); } it.q = v; if (!R && !v && !it.shelf) cart.items.splice(+inp.dataset.q, 1); saveCart(kind); draw();
     });
     document.querySelectorAll('[data-ctn]').forEach(b => b.onclick = () => {
-      const it = cart.items[+b.dataset.ctn]; if (!R && it.q + it.pk > it.stock) { toast(`Only ${it.stock} in stock`); it.q = it.stock; } else it.q += it.pk; saveCart(kind); draw();
+      const it = cart.items[+b.dataset.ctn]; const st = lavOf(it.c) ? 1 : it.pk; if (!R && it.q + st > it.stock) { toast(`Only ${it.stock} in stock`); it.q = it.stock; } else it.q += st; saveCart(kind); draw();
     });
     document.querySelectorAll('[data-sh]').forEach(c => c.onchange = () => { const it = cart.items[+c.dataset.sh]; it.shelf = c.checked; if (!it.shelf && !it.q) cart.items.splice(+c.dataset.sh, 1); saveCart(kind); draw(); });
     const sv = $('#sv'); if (sv) sv.onclick = saveOnly;
@@ -392,7 +394,7 @@ async function cartView(kind) {
     const d = () => { const it = cart.items.find(i => i.c === p.c) || {};
       m.querySelector('#ch').innerHTML = `<div class="card pc">${X.img(p.c)}<div class="pcb"><b>${esc(p.c)}</b><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div><div class="sub">stock ${p.q}</div></div></div>
         <button class="btn ${it.shelf ? 'g' : 'l'}" data-s>✔ متوفر${it.shelf ? ' ✓' : ''}</button>
-        <div class="row" style="gap:6px"><span>🛒 Order (pieces)</span><span class="row" style="gap:6px"><button class="btn l" data-o="-1">−</button><b style="min-width:30px;text-align:center">${it.q || 0}</b><button class="btn l" data-o="1">+</button><button class="btn l" data-o="${p.pk || 1}">+${p.pk || 1}</button></span></div>`;
+        <div class="row" style="gap:6px"><span>🛒 Order (pieces)</span><span class="row" style="gap:6px"><button class="btn l" data-o="-1">−</button><b style="min-width:30px;text-align:center">${it.q || 0}</b><button class="btn l" data-o="1">+</button>${lavOf(p.c) ? '' : `<button class="btn l" data-o="${p.pk || 1}">+${p.pk || 1}</button>`}</span></div>`;
       m.querySelector('[data-s]').onclick = () => { toggleShelf(p.c); d(); };
       m.querySelectorAll('[data-o]').forEach(b => b.onclick = () => { setOrder(p.c, ((cart.items.find(i => i.c === p.c) || {}).q || 0) + +b.dataset.o); d(); }); };
     m.querySelector('#cl').onclick = () => m.remove(); d();
@@ -452,7 +454,7 @@ async function cartView(kind) {
   }
   async function create() {
     const btn = $('#cr'); btn.disabled = true; btn.textContent = 'Creating…';
-    const items = cart.items.filter(i => i.q > 0).map(i => ({ c: i.c, en: i.en, pk: i.pk, q: i.q, p: i.p, list: i.list }));
+    const items = cart.items.filter(i => i.q > 0).map(i => ({ c: i.c, en: i.en, pk: i.pk, lav: lavOf(i.c), q: i.q, p: i.p, list: i.list }));
     const now = new Date(); let inv;
     try {
       await runTransaction(X.db, async tx => {
@@ -463,7 +465,7 @@ async function cartView(kind) {
         snaps.forEach((s, i) => tx.update(refs[i], { q: s.data().q - items[i].q }));
         tx.set(cref, { n: no });
         inv = { no: 'INV-' + pad(no), cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', disc: cart.cust.disc || 0, items,
-          total: r3(items.reduce((a, i) => a + i.q * i.p, 0)), pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / i.pk, 0),
+          total: r3(items.reduce((a, i) => a + i.q * i.p, 0)), pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / cf(i), 0),
           by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now), delivery: cart.delivery || iso(now), note: cart.note || '', status: 'active', deliveryStatus: 'pending' };
         tx.set(doc(X.db, 'invoices', inv.no), inv);
       });
@@ -477,7 +479,7 @@ async function cartView(kind) {
   }
   async function createReturn() {
     const btn = $('#cr'); btn.disabled = true; btn.textContent = 'Saving…';
-    const items = cart.items.map(i => ({ c: i.c, en: i.en, pk: i.pk, q: i.q, p: i.p, list: i.list, damaged: isDamaged(i.note) }));
+    const items = cart.items.map(i => ({ c: i.c, en: i.en, pk: i.pk, lav: lavOf(i.c), q: i.q, p: i.p, list: i.list, damaged: isDamaged(i.note) }));
     const now = new Date(), good = items.filter(i => !i.damaged); let ret;
     try {
       await runTransaction(X.db, async tx => {
@@ -487,7 +489,7 @@ async function cartView(kind) {
         snaps.forEach((s, i) => { if (s.exists()) tx.update(refs[i], { q: s.data().q + good[i].q }); });
         tx.set(cref, { n: no });
         ret = { no: 'RET-' + pad(no), cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', disc: cart.cust.disc || 0, items,
-          total: r3(items.reduce((a, i) => a + i.q * i.p, 0)), pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / i.pk, 0),
+          total: r3(items.reduce((a, i) => a + i.q * i.p, 0)), pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / cf(i), 0),
           restocked: good.reduce((a, i) => a + i.q, 0), damagedPcs: items.filter(i => i.damaged).reduce((a, i) => a + i.q, 0),
           by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now), note: cart.note || '', status: 'active' };
         tx.set(doc(X.db, 'returns', ret.no), ret);
