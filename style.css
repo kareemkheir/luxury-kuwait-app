@@ -50,3 +50,9 @@ img.pt{width:56px;height:72px;object-fit:contain;background:#fff;border-radius:8
 
 .tabs.cats button{flex:none;padding:9px 12px;font-size:14px}
 .tabs.cats.sub button{background:#f1f4fa;font-size:13px;padding:7px 11px}.tabs.cats.sub button.on{background:#3d5a8f;color:#fff}
+
+.ot{width:100%;border-collapse:collapse;background:var(--card,#fff);border-radius:12px;overflow:hidden;font-size:14px;margin:8px 0}
+.ot th{background:#f2f2f2;text-align:left;padding:8px 6px;font-size:12px}
+.ot td{padding:8px 6px;border-bottom:1px solid #eee;vertical-align:middle;word-break:break-all}
+.ot td input{width:56px;padding:6px;margin:0 4px 0 0;text-align:center}
+.ot tfoot td{background:#f9f6ee;border-bottom:0}

@@ -272,15 +272,18 @@ async function cartView(kind) {
       <div class="grid" style="margin-bottom:10px"><button class="btn" id="sc">📷 Scan</button><button class="btn l" id="se">🔎 Search item</button></div>
       <button class="btn l" id="ph" style="margin-top:0">${R ? '🖼 Photo: barcode or printed item number' : '🖼 Read barcode from photo'}</button><input type="file" id="pf" accept="image/*" multiple style="display:none">
       ${cart.items.length === 0 ? '<div class="card sub">No items yet. Scan a barcode or search for an item.</div>' : ''}
-      ${cart.items.map((it, i) => `<div class="card pc">${X.img(it.c)}<div class="pcb"><div class="row"><b>${esc(it.c)}</b><button class="pill r" data-rm="${i}" style="border:0">Remove</button></div>
+      ${R ? cart.items.map((it, i) => `<div class="card pc">${X.img(it.c)}<div class="pcb"><div class="row"><b>${esc(it.c)}</b><button class="pill r" data-rm="${i}" style="border:0">Remove</button></div>
         <div class="sub">${esc(it.en)}</div><div class="ar sub">${esc(it.ar)}</div>
         ${R ? '' : `<label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" data-sh="${i}" ${it.shelf ? 'checked' : ''} style="width:24px;height:24px;margin:0"> ✔ Available on his shelf • موجود عنده</label>`}
         <div class="row" style="margin-top:6px"><div style="flex:1"><label>${R ? 'Pieces returned' : 'Pieces to order (stock ' + it.stock + ')'}</label><input type="number" inputmode="numeric" data-q="${i}" value="${it.q}"></div>
         <button class="btn l" style="width:auto;margin:20px 0 0" data-ctn="${i}">+1 carton<br><span class="sub">(${it.pk} pcs)</span></button></div>
         ${R ? `<div class="row"><input data-nt="${i}" placeholder="Note — write damaged / تالف / K if broken" value="${esc(it.note || '')}" style="flex:1"><button class="btn l" style="width:auto;margin:6px 0" data-dm="${i}">🔨</button></div>${isDamaged(it.note) ? '<span class="pill r">Damaged — will NOT go back to stock</span>' : '<span class="pill g">Goes back to stock</span>'}` : ''}
-        <div class="sub">${kwd(it.p)} KWD each • ${(it.q / it.pk).toFixed(2)} cartons • <b>${kwd(it.q * it.p)}</b></div></div>`).join('')}
-      <div class="card"><div class="row"><span>Pieces</span><b>${pcs}</b></div><div class="row"><span>Cartons</span><b>${ctn.toFixed(2)}</b></div>
-        <div class="row"><span>Total (KWD)</span><b style="font-size:22px">${kwd(total())}</b></div></div>
+        <div class="sub">${kwd(it.p)} KWD each • ${(it.q / it.pk).toFixed(2)} cartons • <b>${kwd(it.q * it.p)}</b></div></div>`).join('') : `${(() => { const O = cart.items.map((it, i) => ({ it, i })).filter(x => x.it.q > 0), Sh = cart.items.map((it, i) => ({ it, i })).filter(x => x.it.shelf);
+        return `${O.length ? `<table class="ot"><thead><tr><th>Item no.</th><th>Qty</th><th>Packing</th><th>Price</th></tr></thead><tbody>${O.map(({ it, i }) => `<tr><td><b>${esc(it.c)}</b>${it.shelf ? ' <span class="pill g">✔</span>' : ''}</td><td><input type="number" inputmode="numeric" data-q="${i}" value="${it.q}"><button class="pill m" data-ctn="${i}" style="border:0">+ctn</button></td><td>${it.pk}</td><td>${kwd(it.p)}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><td><b>TOTAL</b></td><td>${pcs}</td><td><b>${ctn.toFixed(2)}</b><br><span class="sub">cartons</span></td><td><b>${kwd(total())}</b><br><span class="sub">KWD</span></td></tr></tfoot></table>` : ''}
+        ${Sh.length ? `<h3 style="margin:14px 0 4px">✔ متوفر عنده (${Sh.length})</h3>${Sh.map(({ it, i }) => `<div class="row" style="padding:4px 0;border-bottom:1px solid #eee"><span><b>${esc(it.c)}</b> <span class="sub">${esc(it.en)}</span></span><label style="margin:0"><input type="checkbox" data-sh="${i}" checked style="width:22px;height:22px;margin:0"></label></div>`).join('')}` : ''}`; })()}`}
+      ${R ? `<div class="card"><div class="row"><span>Pieces</span><b>${pcs}</b></div><div class="row"><span>Cartons</span><b>${ctn.toFixed(2)}</b></div>
+        <div class="row"><span>Total (KWD)</span><b style="font-size:22px">${kwd(total())}</b></div></div>` : ''}
       ${R ? '' : `<label>Delivery date • تاريخ التوصيل</label><input type="date" id="dd" value="${cart.delivery}">`}
       <label>Note (optional)</label><input id="nt" value="${esc(cart.note)}">
       ${R ? '' : `<button class="btn" id="sv" ${cart.items.length ? '' : 'disabled style="opacity:.5"'}>💾 Save visit (shelf + draft order)</button>`}
@@ -290,12 +293,12 @@ async function cartView(kind) {
     document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { cart.items.splice(+b.dataset.rm, 1); saveCart(kind); draw(); });
     document.querySelectorAll('[data-q]').forEach(inp => inp.onchange = () => {
       const it = cart.items[+inp.dataset.q]; let v = Math.max(R ? 1 : 0, Math.floor(+inp.value || (R ? 1 : 0)));
-      if (!R && v > it.stock) { v = it.stock; toast(`Only ${it.stock} in stock`); } it.q = v; saveCart(kind); draw();
+      if (!R && v > it.stock) { v = it.stock; toast(`Only ${it.stock} in stock`); } it.q = v; if (!R && !v && !it.shelf) cart.items.splice(+inp.dataset.q, 1); saveCart(kind); draw();
     });
     document.querySelectorAll('[data-ctn]').forEach(b => b.onclick = () => {
       const it = cart.items[+b.dataset.ctn]; if (!R && it.q + it.pk > it.stock) { toast(`Only ${it.stock} in stock`); it.q = it.stock; } else it.q += it.pk; saveCart(kind); draw();
     });
-    document.querySelectorAll('[data-sh]').forEach(c => c.onchange = () => { cart.items[+c.dataset.sh].shelf = c.checked; saveCart(kind); });
+    document.querySelectorAll('[data-sh]').forEach(c => c.onchange = () => { const it = cart.items[+c.dataset.sh]; it.shelf = c.checked; if (!it.shelf && !it.q) cart.items.splice(+c.dataset.sh, 1); saveCart(kind); draw(); });
     const sv = $('#sv'); if (sv) sv.onclick = saveOnly;
     const dd = $('#dd'); if (dd) dd.onchange = e => { cart.delivery = e.target.value; saveCart(kind); };
     document.querySelectorAll('[data-nt]').forEach(inp => inp.onchange = () => { cart.items[+inp.dataset.nt].note = inp.value; saveCart(kind); draw(); });
