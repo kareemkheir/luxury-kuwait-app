@@ -95,12 +95,13 @@ export async function mailSetup() {
       <li><b>Deploy → New deployment → ⚙ Web app</b>. Execute as: <b>Me</b>. Who has access: <b>Anyone</b>. Deploy, allow the permissions, and copy the <b>Web app URL</b>.</li>
       <li>Paste that URL here and tap Save.</li></ol>
     <button class="btn l" id="cp">Copy script</button>
+ <label>Secret code (already inside the script — only change it if you made your own)</label><input id="tk" value="${esc(tok)}">
     <label>Web app URL</label><input id="ul" placeholder="https://script.google.com/macros/s/…/exec" value="${esc((cfg && cfg.url) || '')}">
     <button class="btn g" id="sv">Save and turn on</button><button class="btn" id="ts">Send a test email</button>
     ${cfg ? '<button class="btn r" id="of">Turn off</button>' : ''}<button class="btn l" id="cl">Close</button>`);
   m.querySelector('#cl').onclick = () => m.remove();
   m.querySelector('#cp').onclick = async () => { try { await navigator.clipboard.writeText(script(tok)); toast('Script copied'); } catch (e) { prompt('Copy this script', script(tok)); } };
-  const save = async on => { const url = m.querySelector('#ul').value.trim(); if (!/^https:\/\/script\.google\.com\//.test(url)) return toast('Paste the Web app URL'); await setDoc(doc(X.db, 'config', 'mail'), { url, token: tok, on }); await mailConfig(true); };
+  const save = async on => { const url = m.querySelector('#ul').value.trim(); if (!/^https:\/\/script\.google\.com\//.test(url)) return toast('Paste the Web app URL'); const token = (m.querySelector('#tk').value || tok).trim(); await setDoc(doc(X.db, 'config', 'mail'), { url, token, on }); await mailConfig(true); };
   m.querySelector('#sv').onclick = async () => { try { await save(true); toast('Saved. Invoices will be emailed.'); m.remove(); } catch (e) { console.error(e); toast('Could not save'); } };
   m.querySelector('#ts').onclick = async () => {
     try { await save(true); const demo = { no: 'TEST-0001', cust: '-', custEn: 'TEST RETAIL', custAr: '', branch: 'Sample city', date: new Date().toISOString().slice(0, 10), byName: 'Test', delivery: '', items: [{ c: 'ITEM1', q: 2, p: 1.5 }, { c: 'ITEM2', q: 1, p: 4 }], dm: 'end', disc: 10, total: 6.3, cartons: 1 };
