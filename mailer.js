@@ -34,22 +34,23 @@ async function statuses(inv) {
   };
 }
 const FILL = { r: 'FFF8B4B4', g: 'FFB7E4C0', o: 'FFFFD59A', b: 'FFCFE3FF' };
-async function buildMailExcel(inv) {
+async function buildMailExcel(inv, kind) {
   await loadScript(EXCELJS);
-  let st; try { st = await statuses(inv); } catch (e) { console.error(e); st = () => ['', '']; }
+  const RT = kind === 'return';
+  let st; try { st = RT ? null : await statuses(inv); } catch (e) { console.error(e); st = () => ['', '']; }
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Invoice');
   ws.columns = [{ width: 24 }, { width: 12 }, { width: 12 }, { width: 46 }];
   ws.mergeCells('A1:D1'); const h = ws.getCell('A1'); h.value = (inv.custEn || '') + (inv.branch ? ' – ' + inv.branch : '') + (inv.custAr ? '   ' + inv.custAr : ''); h.font = { bold: true, size: 16 }; h.alignment = { horizontal: 'center' };
-  ws.mergeCells('A2:D2'); const s = ws.getCell('A2'); s.value = `${inv.no} • ${inv.date} • by ${inv.byName || ''} • delivery ${inv.delivery || ''}`; s.alignment = { horizontal: 'center' };
-  const hr = ws.addRow([]); const hd = ws.addRow(['Item No.', 'Quantity', 'Price', 'Status for this retailer']); hd.font = { bold: true };
+  ws.mergeCells('A2:D2'); const s = ws.getCell('A2'); s.value = `${RT ? 'RETURN' : 'INVOICE'} ${inv.no} • ${inv.date} • by ${inv.byName || ''}${RT ? '' : ' • delivery ' + (inv.delivery || '')}`; s.alignment = { horizontal: 'center' };
+  const hr = ws.addRow([]); const hd = ws.addRow(['Item No.', 'Quantity', 'Price', RT ? 'Condition' : 'Status for this retailer']); hd.font = { bold: true };
   const first = hd.number + 1;
-  inv.items.forEach(it => { const [t, k] = st(it.c); const r = ws.addRow([String(it.c), it.q, it.p, t]); r.getCell(1).numFmt = '@'; r.getCell(3).numFmt = '0.000'; if (FILL[k]) r.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL[k] } }; });
+  inv.items.forEach(it => { const [t, k] = RT ? (it.damaged ? ['DAMAGED – not back in stock', 'r'] : ['Back in stock', 'g']) : st(it.c); const r = ws.addRow([String(it.c), it.q, it.p, t]); r.getCell(1).numFmt = '@'; r.getCell(3).numFmt = '0.000'; if (FILL[k]) r.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL[k] } }; });
   const last = first + inv.items.length - 1, m = calc(inv.items, inv.dm === 'end' ? inv.disc : 0), qty = inv.items.reduce((a, i) => a + i.q, 0);
   ws.addRow([]);
   const put = (l, v, f) => { const r = ws.addRow([l, v]); r.font = { bold: true }; if (f) r.getCell(2).numFmt = f; };
   put('Final Quantity', qty); put('Subtotal (KWD)', m.sub, '0.000');
   if (inv.dm === 'end' && inv.disc) put(`Discount ${inv.disc}% (KWD)`, -m.da, '0.000');
-  put('Final Price (KWD)', m.net, '0.000'); put('Cartons', Math.round(inv.cartons * 100) / 100);
+  put(RT ? 'Credit (KWD)' : 'Final Price (KWD)', m.net, '0.000'); put('Cartons', Math.round(inv.cartons * 100) / 100);
   return await wb.xlsx.writeBuffer();
 }
 const b64 = buf => { let s = '', u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
@@ -57,12 +58,17 @@ const b64 = buf => { let s = '', u = new Uint8Array(buf); for (let i = 0; i < u.
 async function post(cfg, p) {
   await fetch(cfg.url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: cfg.token, ...p }) });
 }
-export async function emailInvoice(inv) {
+export const emailInvoice = inv => emailDoc(inv, 'invoice');
+export const emailReturn = ret => emailDoc(ret, 'return');
+async function emailDoc(d, kind) {
   try {
     const cfg = await mailConfig(); if (!cfg || cfg.on === false) return;
-    const buf = await buildMailExcel(inv);
-    const p = { subject: `${inv.no} • ${inv.custEn}${inv.branch ? ' – ' + inv.branch : ''} • ${Number(inv.total).toFixed(3)} KWD`, filename: `${inv.custEn}${inv.branch ? ' - ' + inv.branch : ''} ${inv.no}.xlsx`.replace(/[\\/:*?"<>|]/g, ' '), text: `${inv.no} for ${inv.custEn}${inv.branch ? ' (' + inv.branch + ')' : ''}\nTotal ${Number(inv.total).toFixed(3)} KWD\nCreated by ${inv.byName || ''}`, b64: b64(buf) };
-    const q = getQ(); q.push({ id: inv.no, p }); setQ(q);
+    const T = kind === 'return' ? 'RETURN' : 'INVOICE', who = d.byName || 'unknown', br = d.branch ? ' – ' + d.branch : '';
+    const buf = await buildMailExcel(d, kind);
+    const p = { subject: `[${T}] ${d.no} | ${d.custEn}${br} | Employee: ${who} | ${Number(d.total).toFixed(3)} KWD`,
+      filename: `${T} ${d.no} ${d.custEn}${d.branch ? ' - ' + d.branch : ''}.xlsx`.replace(/[\\/:*?"<>|]/g, ' '),
+      text: `TYPE: ${T}\nEMPLOYEE: ${who}\nNUMBER: ${d.no}\nRETAILER: ${d.custEn}${br}\nDATE: ${d.date}\nTOTAL: ${Number(d.total).toFixed(3)} KWD${kind === 'return' ? ' (credit)' : ''}\nPIECES: ${d.pieces}`, b64: b64(buf) };
+    const q = getQ(); q.push({ id: d.no, p }); setQ(q);
     flushMail();
   } catch (e) { console.error(e); }
 }
@@ -105,7 +111,7 @@ export async function mailSetup() {
   m.querySelector('#sv').onclick = async () => { try { await save(true); toast('Saved. Invoices will be emailed.'); m.remove(); } catch (e) { console.error(e); toast('Could not save'); } };
   m.querySelector('#ts').onclick = async () => {
     try { await save(true); const demo = { no: 'TEST-0001', cust: '-', custEn: 'TEST RETAIL', custAr: '', branch: 'Sample city', date: new Date().toISOString().slice(0, 10), byName: 'Test', delivery: '', items: [{ c: 'ITEM1', q: 2, p: 1.5 }, { c: 'ITEM2', q: 1, p: 4 }], dm: 'end', disc: 10, total: 6.3, cartons: 1 };
-      await loadScript(EXCELJS); const buf = await buildMailExcel({ ...demo, cust: '__none__' }); await post(await mailConfig(true), { subject: 'Test invoice email', filename: 'test.xlsx', text: 'If you got this, automatic invoice emails work.', b64: b64(buf) }); toast('Test sent. Check your email in a minute.'); } catch (e) { console.error(e); toast('Could not send the test'); }
+      await loadScript(EXCELJS); const buf = await buildMailExcel({ ...demo, cust: '__none__' }, 'invoice'); await post(await mailConfig(true), { subject: 'Test invoice email', filename: 'test.xlsx', text: 'If you got this, automatic invoice emails work.', b64: b64(buf) }); toast('Test sent. Check your email in a minute.'); } catch (e) { console.error(e); toast('Could not send the test'); }
   };
   const of = m.querySelector('#of'); if (of) of.onclick = async () => { try { await save(false); toast('Turned off'); m.remove(); } catch (e) { toast('Could not turn off'); } };
 }

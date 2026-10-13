@@ -1,4 +1,4 @@
-import { emailInvoice } from './mailer.js';
+import { emailInvoice, emailReturn } from './mailer.js';
 import { logEvent } from './activity.js';
 import { doc, getDocs, setDoc, collection, runTransaction, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -521,7 +521,7 @@ async function cartView(kind) {
         tx.set(doc(X.db, 'returns', ret.no), ret);
       });
     } catch (e) { console.error(e); btn.disabled = false; btn.textContent = 'Create return'; return toast('Could not save the return. Try again.'); }
-    brSave(cart.cust.id, cart.branch); S.products = null; S.rcart = null; saveCart('return'); logEvent('return', { ref: ret.no, cust: ret.cust, custEn: ret.custEn, total: ret.total }); doneReturn(ret);
+    brSave(cart.cust.id, cart.branch); S.products = null; S.rcart = null; saveCart('return'); logEvent('return', { ref: ret.no, cust: ret.cust, custEn: ret.custEn, total: ret.total }); emailReturn(ret); doneReturn(ret);
   }
   draw();
 }
