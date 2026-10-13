@@ -25,6 +25,7 @@ import { initCalendar, calendarHome } from './calendar.js';
 import { initReport, reportHome } from './report.js';
 import { initBackup, backupHome } from './backup.js';
 import { initShelf, shelfHome } from './shelf.js';
+import { initMailer, mailSetup, flushMail } from './mailer.js';
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
 // Keep a copy of the data on the phone so the app opens and visits can be saved without signal (they sync later).
@@ -59,11 +60,11 @@ const catOf = p => p.cat || CATMAP[p.c] || 'others';
 const pimg = (c, big) => IMGMAP[c] ? `<img class="pt${big ? ' big' : ''}" loading="lazy" src="./img/${IMGMAP[c]}" data-full="./img/${IMGMAP[c]}" alt="">` : '';
 document.addEventListener('click', e => { const t = e.target; if (t.classList && t.classList.contains('pt')) { e.stopPropagation(); e.preventDefault(); const m = modal(`<img src="${t.dataset.full}" style="width:100%;max-height:70vh;object-fit:contain;background:#fff;border-radius:12px">${/\/fx_/.test(t.dataset.full) ? '<div class="sub" style="text-align:center;margin-top:6px">Edited picture — colour changed digitally, not a real photo</div>' : ''}<button class="btn l" id="zc">Close</button>`); m.querySelector('#zc').onclick = () => m.remove(); } }, true);
 const CTX = { SUBS, subOf: p => subOf(p), subRank: p => subRank(p), isHidden: p => isHidden(p), catOf: p => catOf(p), CATLIST, img: (c, b) => pimg(c, b), db, S, top: (...a) => top(...a), esc, go: (...a) => go(...a), kwd, toast, modal: h => modal(h), loadProducts: f => loadProducts(f), loadCustomers: f => loadCustomers(f), loadBarcodes: f => loadBarcodes(f), editCustomer: (c, f) => editCustomer(c, f) };
-initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX); initReport(CTX); initBackup(CTX); initShelf(CTX);
+initInvoices(CTX); initStatement(CTX); initActivity(CTX); initCalendar(CTX); initReport(CTX); initBackup(CTX); initShelf(CTX); initMailer(CTX);
 
 const ROLE_HOME = {
   admin: ['invoice', 'return', 'stock', 'statement', 'shelf', 'report', 'calendar'],
-  sales: ['invoice', 'return', 'stock', 'statement', 'shelf', 'calendar'],
+  sales: ['invoice', 'return', 'stock', 'statement', 'calendar'],
   warehouse: ['calendar']
 };
 const BTN = {
@@ -127,6 +128,7 @@ function top(title, back = true) {
 }
 function go(v, arg) {
   S.view = v; S.arg = arg;
+  if (v === 'shelf' && S.user?.role !== 'admin') v = S.view = 'home';
   const fn = { home, stock, statement: statementHome, cheques: chequesHome, calendar: calendarHome, report: reportHome, backup: backupHome, shelf: shelfHome, staff, invoice: invoiceHome, return: returnHome, comingsoon }[v] || comingsoon;
   fn();
   const bk = document.getElementById('bk'); if (bk) bk.onclick = () => go('home');
@@ -136,6 +138,7 @@ function go(v, arg) {
 
 function home() {
   const r = S.user.role, items = ROLE_HOME[r] || [];
+  try { flushMail(); } catch (e) {}
   const adminExtra = r === 'admin' ? `<div class="grid" style="margin-top:12px">
     <button class="big small" data-go="cheques"><span class="ic">💳</span>Cheques<span class="ar">الشيكات</span></button>
     <button class="big small" data-go="staff"><span class="ic">👥</span>Staff<span class="ar">الموظفون</span></button>
@@ -332,6 +335,7 @@ async function staff() {
     <button class="btn" id="add">+ Add staff member</button>
     <button class="btn o" id="pin">Change my PIN</button>
     ${hasData ? '' : '<button class="btn g" id="imp">Load products &amp; customers (first time only)</button>'}
+    <button class="btn" id="eml">📧 Email every invoice to me (setup)</button>
     ${hasData ? '<button class="btn l" id="dsc">Update customer discounts &amp; balances from file</button>' : ''}</div>`;
   document.getElementById('bk').onclick = () => go('home');
   $app.querySelectorAll('[data-t]').forEach(b => b.onclick = async () => { await updateDoc(doc(db, 'users', b.dataset.t), { active: b.dataset.a === '1' }); staff(); });
@@ -356,6 +360,7 @@ async function staff() {
       } catch (e) { toast(e.code === 'auth/email-already-in-use' ? 'Username already used' : 'Could not create'); }
     };
   };
+  const eml = document.getElementById('eml'); if (eml) eml.onclick = () => mailSetup();
   const dsc = document.getElementById('dsc');
   if (dsc) dsc.onclick = () => {
     const m = modal(`<h3>Update customer discounts &amp; balances</h3><div class="sub">Pick the customers.json file I sent you. It updates each customer's discount % and opening balance, and adds customers that are missing. Stock and invoices are not touched. Use it BEFORE you start invoicing, because it replaces the balances.</div>

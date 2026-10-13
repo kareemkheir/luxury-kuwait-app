@@ -1,3 +1,4 @@
+import { emailInvoice } from './mailer.js';
 import { logEvent } from './activity.js';
 import { doc, getDocs, setDoc, collection, runTransaction, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -500,7 +501,7 @@ async function cartView(kind) {
       console.error(e); return toast('Could not create invoice. Try again.');
     }
     brSave(cart.cust.id, cart.branch); await saveVisit(inv.no);
-    S.products = null; S.cart = null; saveCart('invoice'); logEvent('invoice', { ref: inv.no, cust: inv.cust, custEn: inv.custEn, total: inv.total }); done(inv);
+    S.products = null; S.cart = null; saveCart('invoice'); logEvent('invoice', { ref: inv.no, cust: inv.cust, custEn: inv.custEn, total: inv.total }); emailInvoice(inv); done(inv);
   }
   async function createReturn() {
     const btn = $('#cr'); btn.disabled = true; btn.textContent = 'Saving…';
