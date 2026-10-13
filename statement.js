@@ -1,5 +1,5 @@
 import { logEvent } from './activity.js';
-import { doc, getDocs, setDoc, updateDoc, collection, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { doc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 let X;
 export function initStatement(ctx) { X = ctx; }
@@ -50,7 +50,7 @@ export async function statementHome() {
     const L = C.filter(c => (c.active !== false || t) && (!t || c.id.includes(t) || (c.en || '').toLowerCase().includes(t) || (c.ar || '').includes(t)) &&
       (tab === 'all' || (tab === 'over' && A.get(c.id).overdue) || (tab === 'owe' && A.get(c.id).balance > 0.0005)))
       .sort((a, b) => tab === 'all' ? (a.en || '').localeCompare(b.en || '') : A.get(b.id).balance - A.get(a.id).balance);
-    $('#app').innerHTML = top('Customers • العملاء') + `<div class="wrap"><input id="q" placeholder="Search customer…" value="${esc(q)}">
+    $('#app').innerHTML = top('Customers • العملاء') + `<div class="wrap">${S.user.role === 'admin' ? '<button class="btn g" id="nc" style="margin-top:0">+ Add customer • إضافة عميل</button>' : ''}<input id="q" placeholder="Search customer…" value="${esc(q)}">
       <div class="tabs"><button data-t="all" class="${tab === 'all' ? 'on' : ''}">All</button><button data-t="owe" class="${tab === 'owe' ? 'on' : ''}">Owing</button><button data-t="over" class="${tab === 'over' ? 'on' : ''}">⚠ 90+ days ${nOver}</button></div>
       ${L.map(c => { const a = A.get(c.id); return `<div class="card" data-id="${c.id}"><div class="row"><b>${esc(c.en)}</b>
         <span class="pill ${a.balance < -0.0005 ? 'g' : a.balance > 0.0005 ? 'o' : 'm'}">${kwd(Math.abs(a.balance))}${a.balance < -0.0005 ? ' advance' : ''}</span></div>
@@ -61,6 +61,7 @@ export async function statementHome() {
     document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { tab = b.dataset.t; draw(); });
     const qi = $('#q'); qi.oninput = e => { q = e.target.value; draw(); const n = $('#q'); n.focus(); n.setSelectionRange(q.length, q.length); };
     document.querySelectorAll('.card[data-id]').forEach(c => c.onclick = () => detail(C.find(x => x.id === c.dataset.id), L0));
+    const nc = $('#nc'); if (nc) nc.onclick = () => addCustomer(C);
   };
   draw();
 }
@@ -95,11 +96,12 @@ async function detail(c, L0) {
       ${a.rets.length ? `<h3>Returns (credit)</h3>${a.rets.slice().reverse().map(r => `<div class="card"><div class="row"><b>${esc(r.no)}</b><span class="pill g">-${kwd(r.total)}</span></div><div class="sub">${esc(r.date)} • ${r.pieces} pieces</div></div>`).join('')}` : ''}
       <h3>Cheques</h3>
       ${a.chqs.slice().sort((x, y) => y.due.localeCompare(x.due)).map(k => chequeCard(k, false)).join('') || '<div class="card sub">None.</div>'}
-      ${admin ? '<button class="btn l" id="ed">Edit customer</button>' : ''}</div>`;
+      ${admin ? '<button class="btn l" id="ed">Edit customer</button><button class="btn r" id="dc">Delete customer</button>' : ''}</div>`;
     $('#bk').onclick = () => statementHome();
     if (admin) {
       $('#ac').onclick = () => addCheque(c, a, async () => { L = await loadLedger(); draw(); });
       $('#ed').onclick = () => X.editCustomer(c, () => draw());
+      $('#dc').onclick = () => deleteCustomer(c, a);
     }
   };
   draw();
@@ -196,4 +198,36 @@ export async function chequesHome() {
     });
   }
   draw();
+}
+
+/* ---------- add / delete customer ---------- */
+function addCustomer(C) {
+  const { toast, esc } = X;
+  const m = X.modal(`<h3>Add customer • إضافة عميل</h3>
+    <label>Account number (code in your system)</label><input id="cd" inputmode="numeric" placeholder="e.g. 121064">
+    <label>English name</label><input id="en"><label>Arabic name</label><input id="ar" class="ar">
+    <label>Discount % (taken off the invoice total)</label><input id="ds" type="number" step="0.1" inputmode="decimal" value="0">
+    <label>Opening balance (KWD, what he owes now)</label><input id="bl" type="number" step="0.001" inputmode="decimal" value="0">
+    <button class="btn g" id="sv">Add</button><button class="btn l" id="cl">Close</button>`);
+  m.querySelector('#cl').onclick = () => m.remove();
+  m.querySelector('#sv').onclick = async () => {
+    const code = m.querySelector('#cd').value.trim().replace(/\s+/g, ''), en = m.querySelector('#en').value.trim(), ar = m.querySelector('#ar').value.trim();
+    if (!code || !(en || ar)) return toast('Enter the account number and a name');
+    if (C.some(c => c.id === code)) return toast('This account number already exists');
+    const v = { ar, en: en || ar, disc: +m.querySelector('#ds').value || 0, bal: +m.querySelector('#bl').value || 0, active: true };
+    try { await setDoc(doc(X.db, 'customers', code), v); X.S.customers = null; m.remove(); toast('Customer added'); statementHome(); } catch (e) { console.error(e); toast('Could not add the customer'); }
+  };
+}
+function deleteCustomer(c, a) {
+  const { toast, esc, kwd } = X;
+  if (a.rows.length || a.rets.length || a.chqs.length || Math.abs(a.balance) > 0.0005) {
+    const m0 = X.modal(`<h3>Cannot delete ${esc(c.en)}</h3><div class="sub">This customer has ${a.rows.length} invoice(s), ${a.rets.length} return(s), ${a.chqs.length} cheque(s) and a balance of ${kwd(a.balance)} KWD. Deleting would break the accounts.<br>Use <b>Edit customer → Status: Inactive</b> instead: he disappears from the list but the history stays.</div><button class="btn l" id="ok">OK</button>`);
+    m0.querySelector('#ok').onclick = () => m0.remove(); return;
+  }
+  const m = X.modal(`<h3>Delete ${esc(c.en)}?</h3><div class="sub">${esc(c.id)} • no invoices, returns, cheques or balance. This cannot be undone.</div>
+    <button class="btn r" id="yes">Yes, delete</button><button class="btn l" id="no">Cancel</button>`);
+  m.querySelector('#no').onclick = () => m.remove();
+  m.querySelector('#yes').onclick = async () => {
+    try { await deleteDoc(doc(X.db, 'customers', c.id)); X.S.customers = null; m.remove(); toast('Customer deleted'); statementHome(); } catch (e) { console.error(e); toast('Could not delete'); }
+  };
 }

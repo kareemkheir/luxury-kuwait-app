@@ -68,7 +68,7 @@ const ROLE_HOME = {
 };
 const BTN = {
   invoice: ['🧺', 'Shelf Check / Invoice', 'جرد الرف / فاتورة'], shelf: ['📈', 'Shelf Report', 'تقرير الرف'], return: ['↩️', 'Return', 'مرتجع'], stock: ['📦', 'Stock', 'المخزون'],
-  statement: ['👤', 'Customer Statement', 'كشف حساب العميل'], report: ['📊', 'Daily Report', 'التقرير اليومي'], calendar: ['📅', 'Calendar', 'التقويم']
+  statement: ['👤', 'Customers', 'العملاء'], report: ['📊', 'Daily Report', 'التقرير اليومي'], calendar: ['📅', 'Calendar', 'التقويم']
 };
 
 onAuthStateChanged(auth, async u => {
