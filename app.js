@@ -332,7 +332,7 @@ async function staff() {
     <button class="btn" id="add">+ Add staff member</button>
     <button class="btn o" id="pin">Change my PIN</button>
     ${hasData ? '' : '<button class="btn g" id="imp">Load products &amp; customers (first time only)</button>'}
-    ${hasData ? '<button class="btn l" id="dsc">Update customer discounts from file</button>' : ''}</div>`;
+    ${hasData ? '<button class="btn l" id="dsc">Update customer discounts &amp; balances from file</button>' : ''}</div>`;
   document.getElementById('bk').onclick = () => go('home');
   $app.querySelectorAll('[data-t]').forEach(b => b.onclick = async () => { await updateDoc(doc(db, 'users', b.dataset.t), { active: b.dataset.a === '1' }); staff(); });
   document.getElementById('pin').onclick = () => {
@@ -358,7 +358,7 @@ async function staff() {
   };
   const dsc = document.getElementById('dsc');
   if (dsc) dsc.onclick = () => {
-    const m = modal(`<h3>Update customer discounts</h3><div class="sub">Pick the customers.json file I sent you. It only changes each customer's discount % and adds customers that are missing. Stock, balances and invoices are not touched.</div>
+    const m = modal(`<h3>Update customer discounts &amp; balances</h3><div class="sub">Pick the customers.json file I sent you. It updates each customer's discount % and opening balance, and adds customers that are missing. Stock and invoices are not touched. Use it BEFORE you start invoicing, because it replaces the balances.</div>
       <input id="f" type="file" accept=".json"><button class="btn g" id="go">Update</button><button class="btn l" id="cl">Close</button>`);
     m.querySelector('#cl').onclick = () => m.remove();
     m.querySelector('#go').onclick = async () => {
@@ -370,12 +370,12 @@ async function staff() {
         for (let i = 0; i < C.length; i += 400) {
           const bt = writeBatch(db);
           C.slice(i, i + 400).forEach(c => {
-            if (have.has(c.c)) { bt.update(doc(db, 'customers', c.c), { disc: +c.disc || 0 }); up++; }
+            if (have.has(c.c)) { bt.update(doc(db, 'customers', c.c), { disc: +c.disc || 0, bal: +c.bal || 0 }); up++; }
             else { bt.set(doc(db, 'customers', c.c), { ar: c.ar || '', en: c.en || '', bal: c.bal || 0, disc: +c.disc || 0, active: true }); add++; }
           });
           await bt.commit();
         }
-        S.customers = null; m.remove(); toast(`Discounts updated for ${up} customers, ${add} added`);
+        S.customers = null; m.remove(); toast(`Discounts and balances updated for ${up} customers, ${add} added`);
       } catch (e) { console.error(e); b.disabled = false; b.textContent = 'Update'; toast('Could not update. Is it the right file?'); }
     };
   };
