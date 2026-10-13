@@ -92,8 +92,8 @@ async function detail(c, L0) {
         <div class="sub">Invoiced ${kwd(months[m].inv)} • paid ${kwd(months[m].paid)}</div></div>`).join('') : '<div class="card sub">No invoices yet.</div>'}
       <h3>Invoices</h3>
       ${a.rows.slice().reverse().map(i => `<div class="card"><div class="row"><b>${esc(i.no)}</b><span class="pill ${i.rem > 0.0005 ? 'o' : 'g'}">${i.rem > 0.0005 ? kwd(i.rem) + ' left' : 'PAID'}</span></div>
-        <div class="sub">${esc(i.date)} • total ${kwd(i.total)} • paid ${kwd(i.paid)}</div></div>`).join('') || '<div class="card sub">None.</div>'}
-      ${a.rets.length ? `<h3>Returns (credit)</h3>${a.rets.slice().reverse().map(r => `<div class="card"><div class="row"><b>${esc(r.no)}</b><span class="pill g">-${kwd(r.total)}</span></div><div class="sub">${esc(r.date)} • ${r.pieces} pieces</div></div>`).join('')}` : ''}
+        <div class="sub">${esc(i.date)}${i.branch ? ' • ' + esc(i.branch) : ''} • total ${kwd(i.total)} • paid ${kwd(i.paid)}</div></div>`).join('') || '<div class="card sub">None.</div>'}
+      ${a.rets.length ? `<h3>Returns (credit)</h3>${a.rets.slice().reverse().map(r => `<div class="card"><div class="row"><b>${esc(r.no)}</b><span class="pill g">-${kwd(r.total)}</span></div><div class="sub">${esc(r.date)}${r.branch ? ' • ' + esc(r.branch) : ''} • ${r.pieces} pieces</div></div>`).join('')}` : ''}
       <h3>Cheques</h3>
       ${a.chqs.slice().sort((x, y) => y.due.localeCompare(x.due)).map(k => chequeCard(k, false)).join('') || '<div class="card sub">None.</div>'}
       ${admin ? '<button class="btn l" id="ed">Edit customer</button><button class="btn r" id="dc">Delete customer</button>' : ''}</div>`;

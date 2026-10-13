@@ -20,7 +20,7 @@ export async function calendarHome() {
   const byDay = () => { const m = {}; INV.forEach(i => (m[i.delivery] ||= []).push(i)); return m; };
   const stLabel = i => i.deliveryStatus === 'delivered' ? '<span class="pill g">✓ تم التسليم</span>' : i.deliveryStatus === 'cancelled' ? '<span class="pill r">✗ ألغاه العميل</span>' : '<span class="pill o">قيد التوصيل</span>';
   const card = i => `<div class="card" data-id="${i.id}"><div class="row"><b class="ar">${esc(i.custAr || i.custEn)}</b>${stLabel(i)}</div>
-    ${i.custAr ? `<div class="sub">${esc(i.custEn)}</div>` : ''}<div class="sub">${esc(i.no)} • ${i.pieces} pcs • ${i.cartons.toFixed(1)} ctn${showMoney ? ' • ' + kwd(i.total) : ''}</div>
+    ${i.custAr ? `<div class="sub">${esc(i.custEn + (i.branch ? ' – ' + i.branch : ''))}</div>` : ''}<div class="sub">${esc(i.no)} • ${i.pieces} pcs • ${i.cartons.toFixed(1)} ctn${showMoney ? ' • ' + kwd(i.total) : ''}</div>
     ${i.note ? `<div class="sub">📝 ${esc(i.note)}</div>` : ''}${i.delays ? `<div class="sub">🕒 تم التأجيل ${i.delays.length}×</div>` : ''}</div>`;
   const draw = () => {
     const B = byDay(), [y, mo] = ym.split('-').map(Number), first = new Date(y, mo - 1, 1), n = new Date(y, mo, 0).getDate();
@@ -32,7 +32,7 @@ export async function calendarHome() {
     const late = INV.filter(i => (i.deliveryStatus || 'pending') === 'pending' && i.delivery < t0).sort((a, b) => a.delivery.localeCompare(b.delivery));
     const day = B[sel] || [], cx = INV.filter(i => i.deliveryStatus === 'cancelled' && role === 'admin');
     $('#app').innerHTML = top('Calendar • التقويم') + `<div class="wrap">
-      ${role === 'admin' && cx.length ? `<div class="card" style="background:#fde7e5;color:var(--r)"><b>⚠ ${cx.length} order(s) cancelled by the customer</b><div>Open the invoice in New Invoice → Recent invoices and cancel it so the stock returns:</div>${cx.map(i => `<div>${esc(i.no)} • ${esc(i.custEn)}</div>`).join('')}</div>` : ''}
+      ${role === 'admin' && cx.length ? `<div class="card" style="background:#fde7e5;color:var(--r)"><b>⚠ ${cx.length} order(s) cancelled by the customer</b><div>Open the invoice in New Invoice → Recent invoices and cancel it so the stock returns:</div>${cx.map(i => `<div>${esc(i.no)} • ${esc(i.custEn + (i.branch ? ' – ' + i.branch : ''))}</div>`).join('')}</div>` : ''}
       <div class="row" style="margin-bottom:8px"><button class="btn l" id="pm" style="width:60px;margin:0">‹</button><b>${MONTHS[mo - 1]} ${y}</b><button class="btn l" id="nm" style="width:60px;margin:0">›</button></div>
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;margin-bottom:12px">
         ${DAYS.map(d => `<div class="sub" style="font-size:12px">${d[0]}<br>${d[1]}</div>`).join('')}${cells.join('')}</div>
@@ -47,7 +47,7 @@ export async function calendarHome() {
   };
   function open(i) {
     const st = i.deliveryStatus || 'pending', admin = role === 'admin';
-    const m = X.modal(`<h3 class="ar">${esc(i.custAr || i.custEn)}</h3><div class="sub">${esc(i.custEn)} • ${esc(i.no)} • ${esc(i.delivery)}</div>${stLabel(i)}
+    const m = X.modal(`<h3 class="ar">${esc(i.custAr || i.custEn)}</h3><div class="sub">${esc(i.custEn + (i.branch ? ' – ' + i.branch : ''))} • ${esc(i.no)} • ${esc(i.delivery)}</div>${stLabel(i)}
       <div style="margin:8px 0">${i.items.map(x => `<div class="row"><span>${esc(x.c)}</span><b>${x.q} <span class="sub">(${(x.q / (x.lav ? 1 : x.pk)).toFixed(x.lav || !(x.q % x.pk) ? 0 : 1)} ctn)</span></b></div><div class="sub">${esc(x.en)}</div>`).join('')}</div>
       <div class="row"><span>القطع • Pieces</span><b>${i.pieces}</b></div><div class="row"><span>الكراتين • Cartons</span><b>${i.cartons.toFixed(2)}</b></div>
       ${showMoney ? `<div class="row"><span>Total</span><b>${kwd(i.total)} KWD</b></div>` : ''}${i.note ? `<div class="sub">📝 ${esc(i.note)}</div>` : ''}

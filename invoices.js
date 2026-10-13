@@ -5,6 +5,10 @@ let X; // shared context from app.js
 export function initInvoices(ctx) { X = ctx; }
 
 const $ = s => document.querySelector(s);
+const nm = x => (x.custEn || '') + (x.branch ? ' – ' + x.branch : '');
+const brKey = id => 'kw_br_' + id;
+const brList = id => { try { return JSON.parse(localStorage.getItem(brKey(id)) || '[]'); } catch (e) { return []; } };
+const brSave = (id, b) => { b = (b || '').trim(); if (!b) return; try { const L = brList(id).filter(x => x !== b); L.unshift(b); localStorage.setItem(brKey(id), JSON.stringify(L.slice(0, 15))); } catch (e) {} };
 const r3 = n => Math.round(n * 1000) / 1000;
 const pad = n => String(n).padStart(5, '0');
 const dmy = d => `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
@@ -298,6 +302,7 @@ async function cartView(kind) {
       ${R ? `<div class="card"><div class="row"><span>Pieces</span><b>${pcs}</b></div><div class="row"><span>Cartons</span><b>${ctn.toFixed(2)}</b></div>
         ${cart.cust.disc ? `<div class="row"><span>Subtotal</span><b>${kwd(sub().sub)}</b></div><div class="row"><span>Discount ${cart.cust.disc}%</span><b>-${kwd(sub().da)}</b></div>` : ''}<div class="row"><span>Total (KWD)</span><b style="font-size:22px">${kwd(total())}</b></div></div>` : ''}
       ${R ? '' : `<label>Delivery date • تاريخ التوصيل</label><input type="date" id="dd" value="${cart.delivery}">`}
+      <label>Branch / city • الفرع / المنطقة (optional)</label><input id="br" list="brl" placeholder="e.g. Jahra, Salmiya" value="${esc(cart.branch || '')}"><datalist id="brl">${brList(cart.cust.id).map(b => `<option value="${esc(b)}">`).join('')}</datalist>
       <label>Note (optional)</label><input id="nt" value="${esc(cart.note)}">
       ${R ? '' : `<button class="btn" id="sv" ${cart.items.length ? '' : 'disabled style="opacity:.5"'}>💾 Save visit (shelf + draft order)</button>`}
       <button class="btn g" id="cr" ${(R ? cart.items.length : cart.items.some(i => i.q > 0)) ? '' : 'disabled style="opacity:.5"'}>${R ? 'Create return' : 'Create invoice from the order'}</button>
@@ -317,6 +322,7 @@ async function cartView(kind) {
     document.querySelectorAll('[data-nt]').forEach(inp => inp.onchange = () => { cart.items[+inp.dataset.nt].note = inp.value; saveCart(kind); draw(); });
     document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { cart.items[+b.dataset.dm].note = 'damaged'; saveCart(kind); draw(); });
     $('#nt').onchange = e => { cart.note = e.target.value; saveCart(kind); };
+    $('#br').oninput = e => { cart.branch = e.target.value; saveCart(kind); };
     $('#cn').onclick = () => { if (!cart.items.length || confirm('Throw away this draft?')) { S[F] = null; saveCart(kind); go(R ? 'return' : 'invoice'); } };
     $('#sc').onclick = () => {
       let pendingHit = null;
@@ -450,7 +456,7 @@ async function cartView(kind) {
     try {
       const id = cart.visitId || doc(collection(X.db, 'shelf')).id, now = new Date();
       const rec = { cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', shelf: cart.items.filter(i => i.shelf).map(i => i.c),
-        draft: invNo ? [] : cart.items.filter(i => i.q > 0).map(i => ({ c: i.c, q: i.q })), invoiced: invNo || null, note: cart.note || '', delivery: cart.delivery || '' };
+        draft: invNo ? [] : cart.items.filter(i => i.q > 0).map(i => ({ c: i.c, q: i.q })), invoiced: invNo || null, note: cart.note || '', branch: cart.branch || '', delivery: cart.delivery || '' };
       if (!cart.visitId) Object.assign(rec, { by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now) });
       const w = setDoc(doc(X.db, 'shelf', id), rec, { merge: true });
       // Offline, the write waits on the phone and syncs by itself later, so don't make the salesman wait for the server.
@@ -461,6 +467,7 @@ async function cartView(kind) {
   async function saveOnly() {
     if (!cart.items.length) return;
     const b = $('#sv'); b.disabled = true; b.textContent = 'Saving…';
+    brSave(cart.cust.id, cart.branch);
     if (!(await saveVisit(null))) { b.disabled = false; b.textContent = '💾 Save visit (shelf + draft order)'; return toast('Could not save the visit. Try again.'); }
     const n = cart.items.filter(i => i.shelf).length, o = cart.items.filter(i => i.q > 0).length, cu = cart.cust.en, qd = cart.queued;
     logEvent('visit', { cust: cart.cust.id, custEn: cu, shelf: n });
@@ -484,7 +491,7 @@ async function cartView(kind) {
         tx.set(cref, { n: no });
         inv = { no: 'INV-' + pad(no), cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', disc: cart.cust.disc || 0, items,
           dm: 'end', subtotal: calc(items, cart.cust.disc).sub, discAmt: calc(items, cart.cust.disc).da, total: calc(items, cart.cust.disc).net, pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / cf(i), 0),
-          by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now), delivery: cart.delivery || iso(now), note: cart.note || '', status: 'active', deliveryStatus: 'pending' };
+          by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now), delivery: cart.delivery || iso(now), note: cart.note || '', branch: (cart.branch || '').trim(), status: 'active', deliveryStatus: 'pending' };
         tx.set(doc(X.db, 'invoices', inv.no), inv);
       });
     } catch (e) {
@@ -492,7 +499,7 @@ async function cartView(kind) {
       if (String(e.message).startsWith('STOCK:')) { await loadProducts(true); return alert('Not enough stock for ' + e.message.slice(6) + '. Stock was updated; please check quantities.'); }
       console.error(e); return toast('Could not create invoice. Try again.');
     }
-    await saveVisit(inv.no);
+    brSave(cart.cust.id, cart.branch); await saveVisit(inv.no);
     S.products = null; S.cart = null; saveCart('invoice'); logEvent('invoice', { ref: inv.no, cust: inv.cust, custEn: inv.custEn, total: inv.total }); done(inv);
   }
   async function createReturn() {
@@ -509,19 +516,19 @@ async function cartView(kind) {
         ret = { no: 'RET-' + pad(no), cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', disc: cart.cust.disc || 0, items,
           dm: 'end', subtotal: calc(items, cart.cust.disc).sub, discAmt: calc(items, cart.cust.disc).da, total: calc(items, cart.cust.disc).net, pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / cf(i), 0),
           restocked: good.reduce((a, i) => a + i.q, 0), damagedPcs: items.filter(i => i.damaged).reduce((a, i) => a + i.q, 0),
-          by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now), note: cart.note || '', status: 'active' };
+          by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now), note: cart.note || '', branch: (cart.branch || '').trim(), status: 'active' };
         tx.set(doc(X.db, 'returns', ret.no), ret);
       });
     } catch (e) { console.error(e); btn.disabled = false; btn.textContent = 'Create return'; return toast('Could not save the return. Try again.'); }
-    S.products = null; S.rcart = null; saveCart('return'); logEvent('return', { ref: ret.no, cust: ret.cust, custEn: ret.custEn, total: ret.total }); doneReturn(ret);
+    brSave(cart.cust.id, cart.branch); S.products = null; S.rcart = null; saveCart('return'); logEvent('return', { ref: ret.no, cust: ret.cust, custEn: ret.custEn, total: ret.total }); doneReturn(ret);
   }
   draw();
 }
 function done(inv) {
   const { top, esc, go, kwd, toast } = X;
-  const fname = `${safe(inv.custEn)} ${dmy(new Date(inv.created))}.xlsx`;
+  const fname = `${safe(nm(inv))} ${dmy(new Date(inv.created))}.xlsx`;
   $('#app').innerHTML = top('Invoice created ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">✅</div><h2>${esc(inv.no)}</h2>
-    <div>${esc(inv.custEn)}</div><div class="ar sub">${esc(inv.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(inv.total)} KWD</div>${inv.dm === 'end' && inv.disc ? `<div class="sub">${kwd(inv.subtotal)} − ${inv.disc}% discount ${kwd(inv.discAmt)}</div>` : ''}
+    <div>${esc(nm(inv))}</div><div class="ar sub">${esc(inv.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(inv.total)} KWD</div>${inv.dm === 'end' && inv.disc ? `<div class="sub">${kwd(inv.subtotal)} − ${inv.disc}% discount ${kwd(inv.discAmt)}</div>` : ''}
     <div class="sub">${inv.pieces} pieces • ${inv.cartons.toFixed(2)} cartons</div></div>
     <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
   $('#bk').onclick = () => go('home');
@@ -538,7 +545,7 @@ async function recentList() {
   catch (e) { return ($('#rl').innerHTML = '<div class="card">Could not load invoices.</div>'); }
   if (S.user.role === 'sales') L = L.filter(i => i.by === S.user.uid);
   $('#rl').innerHTML = L.length ? L.map(i => `<div class="card" data-id="${i.id}"><div class="row"><b>${esc(i.no)}</b><span class="pill ${i.status === 'cancelled' ? 'r' : 'g'}">${i.status === 'cancelled' ? 'CANCELLED' : kwd(i.total)}</span></div>
-    <div>${esc(i.custEn)}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • delivery ${esc(i.delivery)}</div></div>`).join('') : '<div class="card sub">No invoices yet.</div>';
+    <div>${esc(nm(i))}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • delivery ${esc(i.delivery)}</div></div>`).join('') : '<div class="card sub">No invoices yet.</div>';
   document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => openInvoice(L.find(i => i.id === c.dataset.id)));
 }
 
@@ -548,14 +555,14 @@ async function recentVisits() {
   try { L = (await getDocs(query(collection(X.db, 'shelf'), orderBy('created', 'desc'), limit(80)))).docs.map(d => ({ id: d.id, ...d.data() })); }
   catch (e) { return ($('#rl').innerHTML = '<div class="card">Could not load visits.</div>'); }
   if (S.user.role === 'sales') L = L.filter(v => v.by === S.user.uid);
-  $('#rl').innerHTML = L.length ? L.map(v => `<div class="card" data-id="${v.id}"><div class="row"><b>${esc(v.custEn)}</b><span class="pill ${v.invoiced ? 'g' : (v.draft || []).length ? 'o' : 'm'}">${v.invoiced ? esc(v.invoiced) : (v.draft || []).length ? 'draft order' : 'visit'}</span></div>
+  $('#rl').innerHTML = L.length ? L.map(v => `<div class="card" data-id="${v.id}"><div class="row"><b>${esc(nm(v))}</b><span class="pill ${v.invoiced ? 'g' : (v.draft || []).length ? 'o' : 'm'}">${v.invoiced ? esc(v.invoiced) : (v.draft || []).length ? 'draft order' : 'visit'}</span></div>
     <div class="sub">${esc(v.date)} • by ${esc(v.byName)} • ${(v.shelf || []).length} on shelf${(v.draft || []).length ? ' • ' + v.draft.length + ' ordered' : ''}</div></div>`).join('') : '<div class="card sub">No visits yet.</div>';
   document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => openVisit(L.find(v => v.id === c.dataset.id)));
 }
 async function openVisit(v) {
   const { S, esc } = X; await X.loadProducts();
   const P = c => S.products.find(p => p.c === c);
-  const m = X.modal(`<h3>${esc(v.custEn)}</h3><div class="sub">${esc(v.date)} • by ${esc(v.byName)}${v.invoiced ? ' • invoiced ' + esc(v.invoiced) : ''}</div>
+  const m = X.modal(`<h3>${esc(nm(v))}</h3><div class="sub">${esc(v.date)} • by ${esc(v.byName)}${v.invoiced ? ' • invoiced ' + esc(v.invoiced) : ''}</div>
     <b>On his shelf (${(v.shelf || []).length})</b>${(v.shelf || []).map(c => `<div class="sub">✔ ${esc(c)} ${esc((P(c) || {}).en || '')}</div>`).join('') || '<div class="sub">—</div>'}
     <b style="display:block;margin-top:8px">Draft order (${(v.draft || []).length})</b>${(v.draft || []).map(d => `<div class="sub">${esc(d.c)} × ${d.q}</div>`).join('') || '<div class="sub">—</div>'}
     ${v.invoiced ? '' : '<button class="btn g" id="op">Open to edit / make the invoice</button>'}<button class="btn l" id="cl">Close</button>`);
@@ -565,15 +572,15 @@ async function openVisit(v) {
     const cu = (await X.loadCustomers()).find(c => c.id === v.cust) || {}, disc = cu.disc || 0, items = [], miss = [];
     const add = (c, q, sh) => { let it = items.find(i => i.c === c); if (!it) { const p = P(c); if (!p) return miss.push(c); it = { c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: p.p, q: 0, shelf: false, note: '' }; items.push(it); } if (q) it.q = Math.min(q, Math.max(0, it.stock)); if (sh) it.shelf = true; };
     (v.shelf || []).forEach(c => add(c, 0, true)); (v.draft || []).forEach(d => add(d.c, d.q, false));
-    X.S[KEYS.invoice[0]] = { cust: { id: v.cust, en: v.custEn, ar: v.custAr || '', disc }, items, delivery: v.delivery || iso(new Date(Date.now() + 864e5)), note: v.note || '', visitId: v.id };
+    X.S[KEYS.invoice[0]] = { cust: { id: v.cust, en: v.custEn, ar: v.custAr || '', disc }, items, delivery: v.delivery || iso(new Date(Date.now() + 864e5)), note: v.note || '', branch: v.branch || '', visitId: v.id };
     saveCart('invoice'); m.remove(); if (miss.length) X.toast('Not found: ' + miss.join(', ')); cartView('invoice');
   };
 }
 
 function openInvoice(inv) {
   const { S, esc, kwd, toast } = X;
-  const fname = `${safe(inv.custEn)} ${dmy(new Date(inv.created))}.xlsx`, admin = S.user.role === 'admin';
-  const m = X.modal(`<h3>${esc(inv.no)} ${inv.status === 'cancelled' ? '<span class="pill r">CANCELLED</span>' : ''}</h3><div>${esc(inv.custEn)}</div><div class="ar sub">${esc(inv.custAr)}</div>
+  const fname = `${safe(nm(inv))} ${dmy(new Date(inv.created))}.xlsx`, admin = S.user.role === 'admin';
+  const m = X.modal(`<h3>${esc(inv.no)} ${inv.status === 'cancelled' ? '<span class="pill r">CANCELLED</span>' : ''}</h3><div>${esc(nm(inv))}</div><div class="ar sub">${esc(inv.custAr)}</div>
     <div class="sub">${esc(inv.date)} • by ${esc(inv.byName)} • delivery ${esc(inv.delivery)}</div>
     ${inv.items.map(i => `<div class="row"><span>${esc(i.c)} × ${i.q}</span><span>${kwd(i.q * i.p)}</span></div>`).join('')}
     ${inv.dm === 'end' && inv.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(inv.subtotal)}</span></div><div class="row"><span>Discount ${inv.disc}%</span><span>-${kwd(inv.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Total</b><b>${kwd(inv.total)} KWD</b></div>
@@ -601,9 +608,9 @@ function openInvoice(inv) {
 /* ---------- Returns: finished screen, recent list ---------- */
 function doneReturn(ret) {
   const { top, esc, go, kwd, toast } = X;
-  const fname = `${safe(ret.custEn)} RETURN ${dmy(new Date(ret.created))}.xlsx`;
+  const fname = `${safe(nm(ret))} RETURN ${dmy(new Date(ret.created))}.xlsx`;
   $('#app').innerHTML = top('Return saved ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">↩️</div><h2>${esc(ret.no)}</h2>
-    <div>${esc(ret.custEn)}</div><div class="ar sub">${esc(ret.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(ret.total)} KWD credit</div>
+    <div>${esc(nm(ret))}</div><div class="ar sub">${esc(ret.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(ret.total)} KWD credit</div>
     <div class="sub">${ret.pieces} pieces • back in stock: ${ret.restocked} • damaged: ${ret.damagedPcs}</div></div>
     <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New return</button><button class="btn l" id="hm">Home</button></div>`;
   $('#bk').onclick = () => go('home');
@@ -618,10 +625,10 @@ async function recentReturns() {
   catch (e) { return ($('#rl').innerHTML = '<div class="card">Could not load returns.</div>'); }
   if (S.user.role === 'sales') L = L.filter(i => i.by === S.user.uid);
   $('#rl').innerHTML = L.length ? L.map(i => `<div class="card" data-id="${i.id}"><div class="row"><b>${esc(i.no)}</b><span class="pill g">${kwd(i.total)}</span></div>
-    <div>${esc(i.custEn)}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • damaged ${i.damagedPcs}</div></div>`).join('') : '<div class="card sub">No returns yet.</div>';
+    <div>${esc(nm(i))}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • damaged ${i.damagedPcs}</div></div>`).join('') : '<div class="card sub">No returns yet.</div>';
   document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => {
-    const r = L.find(i => i.id === c.dataset.id), fname = `${safe(r.custEn)} RETURN ${dmy(new Date(r.created))}.xlsx`;
-    const m = X.modal(`<h3>${esc(r.no)}</h3><div>${esc(r.custEn)}</div><div class="sub">${esc(r.date)} • by ${esc(r.byName)}</div>
+    const r = L.find(i => i.id === c.dataset.id), fname = `${safe(nm(r))} RETURN ${dmy(new Date(r.created))}.xlsx`;
+    const m = X.modal(`<h3>${esc(r.no)}</h3><div>${esc(nm(r))}</div><div class="sub">${esc(r.date)} • by ${esc(r.byName)}</div>
       ${r.items.map(i => `<div class="row"><span>${esc(i.c)} × ${i.q} ${i.damaged ? '<span class="pill r">damaged</span>' : ''}</span><span>${kwd(i.q * i.p)}</span></div>`).join('')}
       ${r.dm === 'end' && r.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(r.subtotal)}</span></div><div class="row"><span>Discount ${r.disc}%</span><span>-${kwd(r.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Credit</b><b>${kwd(r.total)} KWD</b></div>
       <button class="btn g" id="sh">📤 Share Excel</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="cl">Close</button>`);
