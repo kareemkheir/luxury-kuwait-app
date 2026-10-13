@@ -331,7 +331,8 @@ async function staff() {
       ${u.id !== S.user.uid ? `<button class="btn l" data-t="${u.id}" data-a="${u.active ? 0 : 1}">${u.active ? 'Disable' : 'Enable'}</button>` : ''}</div>`).join('')}
     <button class="btn" id="add">+ Add staff member</button>
     <button class="btn o" id="pin">Change my PIN</button>
-    ${hasData ? '' : '<button class="btn g" id="imp">Load products &amp; customers (first time only)</button>'}</div>`;
+    ${hasData ? '' : '<button class="btn g" id="imp">Load products &amp; customers (first time only)</button>'}
+    ${hasData ? '<button class="btn l" id="dsc">Update customer discounts from file</button>' : ''}</div>`;
   document.getElementById('bk').onclick = () => go('home');
   $app.querySelectorAll('[data-t]').forEach(b => b.onclick = async () => { await updateDoc(doc(db, 'users', b.dataset.t), { active: b.dataset.a === '1' }); staff(); });
   document.getElementById('pin').onclick = () => {
@@ -353,6 +354,29 @@ async function staff() {
         await setDoc(doc(db, 'users', c.user.uid), { username: u, name: n, role: r, active: true, created: Date.now() });
         await signOut(sa); m.remove(); toast('Created'); staff();
       } catch (e) { toast(e.code === 'auth/email-already-in-use' ? 'Username already used' : 'Could not create'); }
+    };
+  };
+  const dsc = document.getElementById('dsc');
+  if (dsc) dsc.onclick = () => {
+    const m = modal(`<h3>Update customer discounts</h3><div class="sub">Pick the customers.json file I sent you. It only changes each customer's discount % and adds customers that are missing. Stock, balances and invoices are not touched.</div>
+      <input id="f" type="file" accept=".json"><button class="btn g" id="go">Update</button><button class="btn l" id="cl">Close</button>`);
+    m.querySelector('#cl').onclick = () => m.remove();
+    m.querySelector('#go').onclick = async () => {
+      const f = m.querySelector('#f').files[0]; if (!f) return toast('Pick the file');
+      const b = m.querySelector('#go'); b.disabled = true; b.textContent = 'Updating…';
+      try {
+        const C = JSON.parse(await f.text()); if (!Array.isArray(C) || !C.length || !('c' in C[0])) throw new Error('bad file');
+        const have = new Set((await loadCustomers(true)).map(c => c.id)); let up = 0, add = 0;
+        for (let i = 0; i < C.length; i += 400) {
+          const bt = writeBatch(db);
+          C.slice(i, i + 400).forEach(c => {
+            if (have.has(c.c)) { bt.update(doc(db, 'customers', c.c), { disc: +c.disc || 0 }); up++; }
+            else { bt.set(doc(db, 'customers', c.c), { ar: c.ar || '', en: c.en || '', bal: c.bal || 0, disc: +c.disc || 0, active: true }); add++; }
+          });
+          await bt.commit();
+        }
+        S.customers = null; m.remove(); toast(`Discounts updated for ${up} customers, ${add} added`);
+      } catch (e) { console.error(e); b.disabled = false; b.textContent = 'Update'; toast('Could not update. Is it the right file?'); }
     };
   };
   const imp = document.getElementById('imp');

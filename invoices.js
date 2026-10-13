@@ -21,7 +21,10 @@ const EXCELJS = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.mi
 const ZXING = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
 
 /* ---------- Excel (shared by invoices and returns) ---------- */
-export async function buildExcel(items, name) {
+// Discount is taken off the invoice TOTAL (not per item): subtotal at list prices, minus discount %, equals the final price.
+export const calc = (items, d) => { const sub = r3(items.reduce((a, i) => a + i.q * i.p, 0)), da = r3(sub * (d || 0) / 100); return { sub, da, net: r3(sub - da) }; };
+const dOf = x => (x && x.dm === 'end' ? x.disc || 0 : 0);
+export async function buildExcel(items, name, disc) {
   await loadScript(EXCELJS);
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Invoice');
   ws.columns = [{ width: 24 }, { width: 14 }, { width: 14 }];
@@ -31,8 +34,16 @@ export async function buildExcel(items, name) {
   const qty = items.reduce((a, i) => a + i.q, 0), price = r3(items.reduce((a, i) => a + i.q * i.p, 0)), cart = items.reduce((a, i) => a + i.q / cf(i), 0);
   const put = (row, label, formula, result, fmt) => { ws.getCell(`A${row}`).value = label; ws.getCell(`A${row}`).font = { bold: true }; const c = ws.getCell(`B${row}`); c.value = { formula, result }; c.font = { bold: true }; if (fmt) c.numFmt = fmt; };
   put(t, 'Final Quantity', `SUM(B2:B${last})`, qty);
-  put(t + 1, 'Final Price (KWD)', `SUMPRODUCT(B2:B${last},C2:C${last})`, price, '0.000');
-  put(t + 2, 'Cartons', items.map((it, i) => `B${i + 2}/${cf(it)}`).join('+'), cart, '0.##');
+  const d = disc || 0;
+  if (d) {
+    put(t + 1, 'Subtotal (KWD)', `SUMPRODUCT(B2:B${last},C2:C${last})`, price, '0.000');
+    put(t + 2, `Discount ${d}% (KWD)`, `-ROUND(B${t + 1}*${d}/100,3)`, -r3(price * d / 100), '0.000');
+    put(t + 3, 'Final Price (KWD)', `B${t + 1}+B${t + 2}`, r3(price - r3(price * d / 100)), '0.000');
+    put(t + 4, 'Cartons', items.map((it, i) => `B${i + 2}/${cf(it)}`).join('+'), cart, '0.##');
+  } else {
+    put(t + 1, 'Final Price (KWD)', `SUMPRODUCT(B2:B${last},C2:C${last})`, price, '0.000');
+    put(t + 2, 'Cartons', items.map((it, i) => `B${i + 2}/${cf(it)}`).join('+'), cart, '0.##');
+  }
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
@@ -219,7 +230,7 @@ export function matchText(text, products) {
 /* ---------- New invoice / Return (same screen, two kinds) ---------- */
 const KEYS = { invoice: ['cart', 'kw_cart'], return: ['rcart', 'kw_rcart'] };
 function saveCart(kind = 'invoice') { const [f, k] = KEYS[kind]; try { localStorage.setItem(k, JSON.stringify(X.S[f] || null)); } catch (e) {} }
-function restoreCart(kind) { const [f, k] = KEYS[kind]; if (X.S[f]) return; try { X.S[f] = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) {} }
+function restoreCart(kind) { const [f, k] = KEYS[kind]; if (X.S[f]) return; try { X.S[f] = JSON.parse(localStorage.getItem(k) || 'null'); (X.S[f]?.items || []).forEach(i => { if (i.list != null) i.p = i.list; }); } catch (e) {} }
 const isDamaged = n => { const t = String(n || '').trim().toLowerCase(); return t === 'k' || t === 'ك' || /damag/.test(t) || /تالف/.test(t); };
 async function decodeImage(file) {
   await loadScript(ZXING);
@@ -266,7 +277,7 @@ async function cartView(kind) {
   await X.loadBarcodes();
   const bkey = c => String(c).trim().replace(/\//g, '_');
   const P = S.products, by = id => { const k = String(id).trim(); let p = P.find(p => p.id === k || p.c.toLowerCase() === k.toLowerCase()); if (!p && S.barcodes[bkey(k)]) p = P.find(p => p.c === S.barcodes[bkey(k)]); return p; };
-  const total = () => r3(cart.items.reduce((a, i) => a + i.q * i.p, 0));
+  const total = () => calc(cart.items, cart.cust.disc).net, sub = () => calc(cart.items, cart.cust.disc);
   const draw = () => {
     const pcs = cart.items.reduce((a, i) => a + i.q, 0), ctn = cart.items.reduce((a, i) => a + i.q / cf(i), 0);
     $('#app').innerHTML = top((R ? 'Return • ' : 'Visit • ') + esc(cart.cust.en)) + `<div class="wrap">
@@ -282,10 +293,10 @@ async function cartView(kind) {
         ${R ? `<div class="row"><input data-nt="${i}" placeholder="Note — write damaged / تالف / K if broken" value="${esc(it.note || '')}" style="flex:1"><button class="btn l" style="width:auto;margin:6px 0" data-dm="${i}">🔨</button></div>${isDamaged(it.note) ? '<span class="pill r">Damaged — will NOT go back to stock</span>' : '<span class="pill g">Goes back to stock</span>'}` : ''}
         <div class="sub">${kwd(it.p)} KWD each • ${(it.q / cf(it)).toFixed(2)} cartons • <b>${kwd(it.q * it.p)}</b></div></div>`).join('') : `${(() => { const O = cart.items.map((it, i) => ({ it, i })).filter(x => x.it.q > 0), Sh = cart.items.map((it, i) => ({ it, i })).filter(x => x.it.shelf);
         return `${O.length ? `<table class="ot"><thead><tr><th>Item no.</th><th>Qty</th><th>Packing</th><th>Price</th></tr></thead><tbody>${O.map(({ it, i }) => `<tr><td><b>${esc(it.c)}</b>${it.shelf ? ' <span class="pill g">✔</span>' : ''}</td><td><input type="number" inputmode="numeric" data-q="${i}" value="${it.q}"><button class="pill m" data-ctn="${i}" style="border:0">+ctn</button></td><td>${it.pk}</td><td>${kwd(it.p)}</td></tr>`).join('')}</tbody>
-          <tfoot><tr><td><b>TOTAL</b></td><td>${pcs}</td><td><b>${ctn.toFixed(2)}</b><br><span class="sub">cartons</span></td><td><b>${kwd(total())}</b><br><span class="sub">KWD</span></td></tr></tfoot></table>` : ''}
+          <tfoot><tr><td><b>TOTAL</b></td><td>${pcs}</td><td><b>${ctn.toFixed(2)}</b><br><span class="sub">cartons</span></td><td><b>${kwd(sub().sub)}</b><br><span class="sub">KWD</span></td></tr>${cart.cust.disc ? `<tr><td colspan="3">Discount ${cart.cust.disc}% • خصم</td><td>-${kwd(sub().da)}</td></tr><tr><td colspan="3"><b>FINAL • الصافي</b></td><td><b>${kwd(sub().net)}</b></td></tr>` : ''}</tfoot></table>` : ''}
         ${Sh.length ? `<h3 style="margin:14px 0 4px">✔ متوفر عنده (${Sh.length})</h3>${Sh.map(({ it, i }) => `<div class="row" style="padding:4px 0;border-bottom:1px solid #eee"><span><b>${esc(it.c)}</b> <span class="sub">${esc(it.en)}</span></span><label style="margin:0"><input type="checkbox" data-sh="${i}" checked style="width:22px;height:22px;margin:0"></label></div>`).join('')}` : ''}`; })()}`}
       ${R ? `<div class="card"><div class="row"><span>Pieces</span><b>${pcs}</b></div><div class="row"><span>Cartons</span><b>${ctn.toFixed(2)}</b></div>
-        <div class="row"><span>Total (KWD)</span><b style="font-size:22px">${kwd(total())}</b></div></div>` : ''}
+        ${cart.cust.disc ? `<div class="row"><span>Subtotal</span><b>${kwd(sub().sub)}</b></div><div class="row"><span>Discount ${cart.cust.disc}%</span><b>-${kwd(sub().da)}</b></div>` : ''}<div class="row"><span>Total (KWD)</span><b style="font-size:22px">${kwd(total())}</b></div></div>` : ''}
       ${R ? '' : `<label>Delivery date • تاريخ التوصيل</label><input type="date" id="dd" value="${cart.delivery}">`}
       <label>Note (optional)</label><input id="nt" value="${esc(cart.note)}">
       ${R ? '' : `<button class="btn" id="sv" ${cart.items.length ? '' : 'disabled style="opacity:.5"'}>💾 Save visit (shelf + draft order)</button>`}
@@ -378,7 +389,7 @@ async function cartView(kind) {
   }
   function ensure(c) {
     const p = by(c); if (!p) return null; let it = cart.items.find(i => i.c === p.c);
-    if (!it) { it = { c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: r3(p.p * (1 - (cart.cust.disc || 0) / 100)), q: 0, shelf: false, note: '' }; cart.items.push(it); }
+    if (!it) { it = { c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: p.p, q: 0, shelf: false, note: '' }; cart.items.push(it); }
     return it;
   }
   const tidy = it => { if (it && !it.q && !it.shelf) { const k = cart.items.indexOf(it); if (k >= 0) cart.items.splice(k, 1); } };
@@ -405,7 +416,7 @@ async function cartView(kind) {
     if (!R) { choose(p.c); return `Added ${p.c} — choose shelf / order`; }
     if (!R && p.q <= 0) return `${p.c} is OUT OF STOCK`;
     if (ex) { if (!R && ex.q >= ex.stock) return `Only ${ex.stock} in stock`; ex.q += 1; }
-    else cart.items.push({ c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: r3(p.p * (1 - (cart.cust.disc || 0) / 100)), q: 1, shelf: false, note: '' });
+    else cart.items.push({ c: p.c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: p.p, q: 1, shelf: false, note: '' });
     saveCart(kind); draw(); return `Added ${p.c}`;
   }
   function searchItem() {
@@ -472,7 +483,7 @@ async function cartView(kind) {
         snaps.forEach((s, i) => tx.update(refs[i], { q: s.data().q - items[i].q }));
         tx.set(cref, { n: no });
         inv = { no: 'INV-' + pad(no), cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', disc: cart.cust.disc || 0, items,
-          total: r3(items.reduce((a, i) => a + i.q * i.p, 0)), pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / cf(i), 0),
+          dm: 'end', subtotal: calc(items, cart.cust.disc).sub, discAmt: calc(items, cart.cust.disc).da, total: calc(items, cart.cust.disc).net, pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / cf(i), 0),
           by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now), delivery: cart.delivery || iso(now), note: cart.note || '', status: 'active', deliveryStatus: 'pending' };
         tx.set(doc(X.db, 'invoices', inv.no), inv);
       });
@@ -496,7 +507,7 @@ async function cartView(kind) {
         snaps.forEach((s, i) => { if (s.exists()) tx.update(refs[i], { q: s.data().q + good[i].q }); });
         tx.set(cref, { n: no });
         ret = { no: 'RET-' + pad(no), cust: cart.cust.id, custEn: cart.cust.en, custAr: cart.cust.ar || '', disc: cart.cust.disc || 0, items,
-          total: r3(items.reduce((a, i) => a + i.q * i.p, 0)), pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / cf(i), 0),
+          dm: 'end', subtotal: calc(items, cart.cust.disc).sub, discAmt: calc(items, cart.cust.disc).da, total: calc(items, cart.cust.disc).net, pieces: items.reduce((a, i) => a + i.q, 0), cartons: items.reduce((a, i) => a + i.q / cf(i), 0),
           restocked: good.reduce((a, i) => a + i.q, 0), damagedPcs: items.filter(i => i.damaged).reduce((a, i) => a + i.q, 0),
           by: S.user.uid, byName: S.user.name, created: now.getTime(), date: iso(now), note: cart.note || '', status: 'active' };
         tx.set(doc(X.db, 'returns', ret.no), ret);
@@ -510,11 +521,11 @@ function done(inv) {
   const { top, esc, go, kwd, toast } = X;
   const fname = `${safe(inv.custEn)} ${dmy(new Date(inv.created))}.xlsx`;
   $('#app').innerHTML = top('Invoice created ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">✅</div><h2>${esc(inv.no)}</h2>
-    <div>${esc(inv.custEn)}</div><div class="ar sub">${esc(inv.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(inv.total)} KWD</div>
+    <div>${esc(inv.custEn)}</div><div class="ar sub">${esc(inv.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(inv.total)} KWD</div>${inv.dm === 'end' && inv.disc ? `<div class="sub">${kwd(inv.subtotal)} − ${inv.disc}% discount ${kwd(inv.discAmt)}</div>` : ''}
     <div class="sub">${inv.pieces} pieces • ${inv.cartons.toFixed(2)} cartons</div></div>
     <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
   $('#bk').onclick = () => go('home');
-  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
+  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv)), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
   $('#sh').onclick = () => run('share'); $('#dl').onclick = () => run('download');
   $('#nw').onclick = () => go('invoice'); $('#hm').onclick = () => go('home');
 }
@@ -552,7 +563,7 @@ async function openVisit(v) {
   const op = m.querySelector('#op'); if (!op) return;
   op.onclick = async () => {
     const cu = (await X.loadCustomers()).find(c => c.id === v.cust) || {}, disc = cu.disc || 0, items = [], miss = [];
-    const add = (c, q, sh) => { let it = items.find(i => i.c === c); if (!it) { const p = P(c); if (!p) return miss.push(c); it = { c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: Math.round(p.p * (1 - disc / 100) * 1000) / 1000, q: 0, shelf: false, note: '' }; items.push(it); } if (q) it.q = Math.min(q, Math.max(0, it.stock)); if (sh) it.shelf = true; };
+    const add = (c, q, sh) => { let it = items.find(i => i.c === c); if (!it) { const p = P(c); if (!p) return miss.push(c); it = { c, en: p.en, ar: p.ar, pk: p.pk || 1, stock: p.q, list: p.p, p: p.p, q: 0, shelf: false, note: '' }; items.push(it); } if (q) it.q = Math.min(q, Math.max(0, it.stock)); if (sh) it.shelf = true; };
     (v.shelf || []).forEach(c => add(c, 0, true)); (v.draft || []).forEach(d => add(d.c, d.q, false));
     X.S[KEYS.invoice[0]] = { cust: { id: v.cust, en: v.custEn, ar: v.custAr || '', disc }, items, delivery: v.delivery || iso(new Date(Date.now() + 864e5)), note: v.note || '', visitId: v.id };
     saveCart('invoice'); m.remove(); if (miss.length) X.toast('Not found: ' + miss.join(', ')); cartView('invoice');
@@ -565,10 +576,10 @@ function openInvoice(inv) {
   const m = X.modal(`<h3>${esc(inv.no)} ${inv.status === 'cancelled' ? '<span class="pill r">CANCELLED</span>' : ''}</h3><div>${esc(inv.custEn)}</div><div class="ar sub">${esc(inv.custAr)}</div>
     <div class="sub">${esc(inv.date)} • by ${esc(inv.byName)} • delivery ${esc(inv.delivery)}</div>
     ${inv.items.map(i => `<div class="row"><span>${esc(i.c)} × ${i.q}</span><span>${kwd(i.q * i.p)}</span></div>`).join('')}
-    <div class="row" style="margin-top:8px"><b>Total</b><b>${kwd(inv.total)} KWD</b></div>
+    ${inv.dm === 'end' && inv.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(inv.subtotal)}</span></div><div class="row"><span>Discount ${inv.disc}%</span><span>-${kwd(inv.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Total</b><b>${kwd(inv.total)} KWD</b></div>
     <button class="btn g" id="sh">📤 Share Excel</button><button class="btn" id="dl">⬇️ Download Excel</button>
     ${admin && inv.status === 'active' ? '<button class="btn r" id="cx">Cancel this invoice (stock returns)</button>' : ''}<button class="btn l" id="cl">Close</button>`);
-  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
+  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv)), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
   m.querySelector('#sh').onclick = () => run('share'); m.querySelector('#dl').onclick = () => run('download'); m.querySelector('#cl').onclick = () => m.remove();
   const cx = m.querySelector('#cx');
   if (cx) cx.onclick = async () => {
@@ -596,7 +607,7 @@ function doneReturn(ret) {
     <div class="sub">${ret.pieces} pieces • back in stock: ${ret.restocked} • damaged: ${ret.damagedPcs}</div></div>
     <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New return</button><button class="btn l" id="hm">Home</button></div>`;
   $('#bk').onclick = () => go('home');
-  const run = async mode => { try { await sendFile(await buildExcel(ret.items, fname), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
+  const run = async mode => { try { await sendFile(await buildExcel(ret.items, fname, dOf(ret)), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
   $('#sh').onclick = () => run('share'); $('#dl').onclick = () => run('download');
   $('#nw').onclick = () => go('return'); $('#hm').onclick = () => go('home');
 }
@@ -612,9 +623,9 @@ async function recentReturns() {
     const r = L.find(i => i.id === c.dataset.id), fname = `${safe(r.custEn)} RETURN ${dmy(new Date(r.created))}.xlsx`;
     const m = X.modal(`<h3>${esc(r.no)}</h3><div>${esc(r.custEn)}</div><div class="sub">${esc(r.date)} • by ${esc(r.byName)}</div>
       ${r.items.map(i => `<div class="row"><span>${esc(i.c)} × ${i.q} ${i.damaged ? '<span class="pill r">damaged</span>' : ''}</span><span>${kwd(i.q * i.p)}</span></div>`).join('')}
-      <div class="row" style="margin-top:8px"><b>Credit</b><b>${kwd(r.total)} KWD</b></div>
+      ${r.dm === 'end' && r.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(r.subtotal)}</span></div><div class="row"><span>Discount ${r.disc}%</span><span>-${kwd(r.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Credit</b><b>${kwd(r.total)} KWD</b></div>
       <button class="btn g" id="sh">📤 Share Excel</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="cl">Close</button>`);
-    const run = async mode => { try { await sendFile(await buildExcel(r.items, fname), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
+    const run = async mode => { try { await sendFile(await buildExcel(r.items, fname, dOf(r)), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
     m.querySelector('#sh').onclick = () => run('share'); m.querySelector('#dl').onclick = () => run('download'); m.querySelector('#cl').onclick = () => m.remove();
   });
 }
