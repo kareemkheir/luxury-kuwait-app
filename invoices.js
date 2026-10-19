@@ -31,11 +31,8 @@ export const calc = (items, d) => { const sub = r3(items.reduce((a, i) => a + i.
 const dOf = x => (x && x.dm === 'end' ? x.disc || 0 : 0);
 export async function buildExcel(items, name, disc, plain) {
   await loadScript(EXCELJS);
-  if (plain) {   // salesman's invoice file: only item number + quantity, no headers, no totals — data starts in row 1
-    const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Invoice');
-    ws.columns = [{ width: 24 }, { width: 12 }];
-    items.forEach(it => { const r = ws.addRow([String(it.c), it.q]); r.getCell(1).numFmt = '@'; });
-    return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  if (plain) {   // salesman's invoice file: plain text, TAB-delimited: item number <tab> quantity, one item per line, no headers, no totals
+    return new Blob([items.map(it => String(it.c) + '\t' + it.q).join('\r\n') + '\r\n'], { type: 'text/plain' });
   }
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Invoice');
   ws.columns = [{ width: 24 }, { width: 14 }, { width: 14 }];
@@ -617,13 +614,13 @@ async function cartView(kind) {
 }
 function done(inv) {
   const { top, esc, go, kwd, toast } = X;
-  const fname = `${safe(nm(inv))} ${dmy(new Date(inv.created))}.xlsx`;
+  const fname = `${safe(nm(inv))} ${dmy(new Date(inv.created))}.txt`;
   $('#app').innerHTML = top('Invoice created ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">✅</div><h2>${esc(inv.no)}</h2>
     <div>${esc(nm(inv))}</div><div class="ar sub">${esc(inv.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(inv.total)} KWD</div>${inv.dm === 'end' && inv.disc ? `<div class="sub">${kwd(inv.subtotal)} − ${inv.disc}% discount ${kwd(inv.discAmt)}</div>` : ''}
     <div class="sub">${inv.pieces} pieces • ${inv.cartons.toFixed(2)} cartons</div></div>
-    <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
+    <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download text file</button><button class="btn l" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
   $('#bk').onclick = () => go('home');
-  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv), true), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
+  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv), true), fname, mode); } catch (e) { console.error(e); toast('Could not build the file'); } };
   $('#sh').onclick = () => run('share'); $('#dl').onclick = () => run('download');
   $('#nw').onclick = () => go('invoice'); $('#hm').onclick = () => go('home');
 }
@@ -670,12 +667,12 @@ async function openVisit(v) {
 
 function openInvoice(inv) {
   const { S, esc, kwd, toast } = X;
-  const fname = `${safe(nm(inv))} ${dmy(new Date(inv.created))}.xlsx`, admin = S.user.role === 'admin';
+  const fname = `${safe(nm(inv))} ${dmy(new Date(inv.created))}.txt`, admin = S.user.role === 'admin';
   const m = X.modal(`<h3>${esc(inv.no)} ${inv.status === 'cancelled' ? '<span class="pill r">CANCELLED</span>' : ''}</h3><div>${esc(nm(inv))}</div><div class="ar sub">${esc(inv.custAr)}</div>
     <div class="sub">${esc(inv.date)} • by ${esc(inv.byName)} • delivery ${esc(inv.delivery)}</div>
     ${inv.items.map(i => `<div class="row"><span>${esc(i.c)} × ${i.q}</span><span>${kwd(i.q * i.p)}</span></div>`).join('')}
     ${inv.dm === 'end' && inv.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(inv.subtotal)}</span></div><div class="row"><span>Discount ${inv.disc}%</span><span>-${kwd(inv.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Total</b><b>${kwd(inv.total)} KWD</b></div>
-    <button class="btn g" id="sh">📤 Share Excel</button><button class="btn" id="dl">⬇️ Download Excel</button>
+    <button class="btn g" id="sh">📤 Share file</button><button class="btn" id="dl">⬇️ Download text file</button>
     ${admin && inv.status === 'active' ? '<button class="btn r" id="cx">Cancel this invoice (stock returns)</button>' : ''}<button class="btn l" id="cl">Close</button>`);
   const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv), true), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
   m.querySelector('#sh').onclick = () => run('share'); m.querySelector('#dl').onclick = () => run('download'); m.querySelector('#cl').onclick = () => m.remove();
