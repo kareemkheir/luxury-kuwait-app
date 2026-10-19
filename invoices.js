@@ -674,7 +674,7 @@ function openInvoice(inv) {
     ${inv.dm === 'end' && inv.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(inv.subtotal)}</span></div><div class="row"><span>Discount ${inv.disc}%</span><span>-${kwd(inv.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Total</b><b>${kwd(inv.total)} KWD</b></div>
     <button class="btn g" id="sh">📤 Share file</button><button class="btn" id="dl">⬇️ Download text file</button>
     ${admin && inv.status === 'active' ? '<button class="btn r" id="cx">Cancel this invoice (stock returns)</button>' : ''}<button class="btn l" id="cl">Close</button>`);
-  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv), true), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
+  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv), true), fname, mode); } catch (e) { toast('Could not build the file'); } };
   m.querySelector('#sh').onclick = () => run('share'); m.querySelector('#dl').onclick = () => run('download'); m.querySelector('#cl').onclick = () => m.remove();
   const cx = m.querySelector('#cx');
   if (cx) cx.onclick = async () => {
@@ -696,13 +696,13 @@ function openInvoice(inv) {
 /* ---------- Returns: finished screen, recent list ---------- */
 function doneReturn(ret) {
   const { top, esc, go, kwd, toast } = X;
-  const fname = `${safe(nm(ret))} RETURN ${dmy(new Date(ret.created))}.xlsx`;
+  const fname = `${safe(nm(ret))} RETURN ${dmy(new Date(ret.created))}.txt`;
   $('#app').innerHTML = top('Return saved ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">↩️</div><h2>${esc(ret.no)}</h2>
     <div>${esc(nm(ret))}</div><div class="ar sub">${esc(ret.custAr)}</div><div style="font-size:24px;font-weight:800;margin-top:8px">${kwd(ret.total)} KWD credit</div>
     <div class="sub">${ret.pieces} pieces • back in stock: ${ret.restocked} • damaged: ${ret.damagedPcs}</div></div>
-    <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New return</button><button class="btn l" id="hm">Home</button></div>`;
+    <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download text file</button><button class="btn l" id="nw">New return</button><button class="btn l" id="hm">Home</button></div>`;
   $('#bk').onclick = () => go('home');
-  const run = async mode => { try { await sendFile(await buildExcel(ret.items, fname, dOf(ret)), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
+  const run = async mode => { try { await sendFile(await buildExcel(ret.items, fname, dOf(ret), true), fname, mode); } catch (e) { console.error(e); toast('Could not build the file'); } };
   $('#sh').onclick = () => run('share'); $('#dl').onclick = () => run('download');
   $('#nw').onclick = () => go('return'); $('#hm').onclick = () => go('home');
 }
@@ -715,12 +715,12 @@ async function recentReturns() {
   $('#rl').innerHTML = L.length ? L.map(i => `<div class="card" data-id="${i.id}"><div class="row"><b>${esc(i.no)}</b><span class="pill g">${kwd(i.total)}</span></div>
     <div>${esc(nm(i))}</div><div class="ar sub">${esc(i.custAr)}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • damaged ${i.damagedPcs}</div></div>`).join('') : '<div class="card sub">No returns yet.</div>';
   document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => {
-    const r = L.find(i => i.id === c.dataset.id), fname = `${safe(nm(r))} RETURN ${dmy(new Date(r.created))}.xlsx`;
+    const r = L.find(i => i.id === c.dataset.id), fname = `${safe(nm(r))} RETURN ${dmy(new Date(r.created))}.txt`;
     const m = X.modal(`<h3>${esc(r.no)}</h3><div>${esc(nm(r))}</div><div class="ar sub">${esc(r.custAr)}</div><div class="sub">${esc(r.date)} • by ${esc(r.byName)}</div>
       ${r.items.map(i => `<div class="row"><span>${esc(i.c)} × ${i.q} ${i.damaged ? '<span class="pill r">damaged</span>' : ''}</span><span>${kwd(i.q * i.p)}</span></div>`).join('')}
       ${r.dm === 'end' && r.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(r.subtotal)}</span></div><div class="row"><span>Discount ${r.disc}%</span><span>-${kwd(r.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Credit</b><b>${kwd(r.total)} KWD</b></div>
-      <button class="btn g" id="sh">📤 Share Excel</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="cl">Close</button>`);
-    const run = async mode => { try { await sendFile(await buildExcel(r.items, fname, dOf(r)), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
+      <button class="btn g" id="sh">📤 Share file</button><button class="btn" id="dl">⬇️ Download text file</button><button class="btn l" id="cl">Close</button>`);
+    const run = async mode => { try { await sendFile(await buildExcel(r.items, fname, dOf(r), true), fname, mode); } catch (e) { toast('Could not build the file'); } };
     m.querySelector('#sh').onclick = () => run('share'); m.querySelector('#dl').onclick = () => run('download'); m.querySelector('#cl').onclick = () => m.remove();
   });
 }
