@@ -34,7 +34,7 @@ async function load(force) {
     const before = sorted.filter(i => i.cust === r.cust && i.created < r.created && i.items.some(x => x.c === it.c));
     const last = before[before.length - 1], sent = before.reduce((a, i) => a + i.items.filter(x => x.c === it.c).reduce((s, x) => s + x.q, 0), 0);
     const days = last ? Math.floor((r.created - last.created) / DAY) : null;
-    rets.push({ cust: r.cust, custEn: r.custEn, branch: r.branch || '', c: it.c, q: it.q, sent, days, date: r.created, no: r.no, damaged: !!it.damaged, lastInv: last ? last.no : '', flag: days === null ? 'other' : days <= 7 ? 'quick' : days >= 90 ? 'late' : 'other' });
+    rets.push({ cust: r.cust, custEn: r.custEn, custAr: r.custAr || '', branch: r.branch || '', c: it.c, q: it.q, sent, days, date: r.created, no: r.no, damaged: !!it.damaged, lastInv: last ? last.no : '', flag: days === null ? 'other' : days <= 7 ? 'quick' : days >= 90 ? 'late' : 'other' });
   }));
   rets.sort((a, b) => b.date - a.date);
   return (D = { R, P, visits, rets });
@@ -101,7 +101,7 @@ export async function shelfHome() {
     $('#bd').innerHTML = `<div class="sub">Items we sent to a retailer that came back. <b>Quick</b> = returned within 7 days of the invoice. <b>90+ days</b> = he did not reorder it for 90 days and then returned it.</div>
       <div class="tabs"><button data-r="quick" class="${rf === 'quick' ? 'on' : ''}">Quick (${n('quick')})</button><button data-r="late" class="${rf === 'late' ? 'on' : ''}">90+ days (${n('late')})</button><button data-r="other" class="${rf === 'other' ? 'on' : ''}">Other (${n('other')})</button><button data-r="all" class="${rf === 'all' ? 'on' : ''}">All</button></div>
       ${V.map(r => `<div class="card pc">${X.img(r.c)}<div class="pcb"><div class="row"><b>${esc(r.c)}</b><span class="pill ${r.flag === 'quick' ? 'r' : r.flag === 'late' ? 'o' : 'm'}">${r.flag === 'quick' ? 'quick return' : r.flag === 'late' ? '90+ days' : 'returned'}</span></div>
-        <div class="sub">${esc(nm(r.c))}</div><div><b>${esc(r.custEn)}</b>${r.branch ? ' – ' + esc(r.branch) : ''}</div>
+        <div class="sub">${esc(nm(r.c))}</div><div><b>${esc(r.custEn)}</b>${r.branch ? ' – ' + esc(r.branch) : ''}</div>${r.custAr ? `<div class="ar sub">${esc(r.custAr)}</div>` : ''}
         <div class="sub">returned ${r.q} on ${dmy(r.date)} (${esc(r.no)}) • sent to him ${r.sent} in total${r.days === null ? ' • no invoice of it found' : ` • ${r.days} day(s) after ${esc(r.lastInv)}`}${r.damaged ? ' • damaged' : ''}</div></div></div>`).join('') || '<div class="card sub">Nothing here yet.</div>'}`;
     document.querySelectorAll('.tabs button[data-r]').forEach(b => b.onclick = () => { rf = b.dataset.r; rtnTab(); });
   };

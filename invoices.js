@@ -29,8 +29,14 @@ const ZXING = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.
 // Discount is taken off the invoice TOTAL (not per item): subtotal at list prices, minus discount %, equals the final price.
 export const calc = (items, d) => { const sub = r3(items.reduce((a, i) => a + i.q * i.p, 0)), da = r3(sub * (d || 0) / 100); return { sub, da, net: r3(sub - da) }; };
 const dOf = x => (x && x.dm === 'end' ? x.disc || 0 : 0);
-export async function buildExcel(items, name, disc) {
+export async function buildExcel(items, name, disc, plain) {
   await loadScript(EXCELJS);
+  if (plain) {   // salesman's invoice file: only item number + quantity, no headers, no totals — data starts in row 1
+    const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Invoice');
+    ws.columns = [{ width: 24 }, { width: 12 }];
+    items.forEach(it => { const r = ws.addRow([String(it.c), it.q]); r.getCell(1).numFmt = '@'; });
+    return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Invoice');
   ws.columns = [{ width: 24 }, { width: 14 }, { width: 14 }];
   const h = ws.addRow(['Item No.', 'Quantity', 'Price']); h.font = { bold: true };
@@ -220,6 +226,33 @@ async function ocrText(file, max) {
   await ocrWorker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-', tessedit_pageseg_mode: '11' });
   return (await ocrWorker.recognize(await prepImage(file, max))).data.text;
 }
+const WL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-';
+async function ocrSheet(file) {   // a whole printed return sheet: read it row by row (psm 6) and also scattered (psm 11) so no row is missed
+  await loadScript(TESS);
+  ocrWorker ||= await Tesseract.createWorker('eng');
+  const cv = await prepImage(file, 3200);
+  const run = async mode => { await ocrWorker.setParameters({ tessedit_char_whitelist: WL, tessedit_pageseg_mode: mode, preserve_interword_spaces: '1' }); return (await ocrWorker.recognize(cv)).data.text; };
+  const rows = await run('6'), sparse = await run('11');
+  return { rows, sparse };
+}
+// Every item on the sheet: one result per product, with the quantity printed on the same row when it can be read.
+export function parseSheet(txt, products) {
+  const out = new Map();
+  const put = (p, q, sure) => { const o = out.get(p.c); if (o) { o.q += q; o.sure = o.sure && sure; } else out.set(p.c, { p, q, sure }); };
+  String(txt.rows || '').split(/\n+/).forEach(line => {
+    const hits = matchText(line, products); if (!hits.length) return;
+    if (hits.length > 1) { hits.forEach(p => put(p, 1, false)); return; }
+    const p = hits[0], toks = line.split(/[^A-Za-z0-9-]+/).filter(Boolean), k = canon(p.c);
+    let at = toks.findIndex((t, i) => canon(t) === k || (toks[i + 1] && canon(t + toks[i + 1]) === k));
+    if (at >= 0 && canon(toks[at]) !== k) at++;        // the code was split in two pieces
+    const after = at >= 0 ? toks.slice(at + 1) : [];   // only what is printed AFTER the code (the row number before it is not a quantity)
+    const qs = after.filter(t => /^[0-9OoIilL]{1,4}$/.test(t) && /\d/.test(t)).map(t => ({ n: +t.replace(/[Oo]/g, '0').replace(/[IilL]/g, '1'), clean: /^\d+$/.test(t) })).filter(x => x.n > 0);
+    const q = qs.length ? qs[0] : null;   // first number after the code = Qty column
+    put(p, q ? q.n : 1, !!(q && q.clean));
+  });
+  matchText(txt.sparse || '', products).forEach(p => { if (!out.has(p.c)) out.set(p.c, { p, q: 1, sure: false }); });
+  return [...out.values()];
+}
 // Compare codes ignoring look-alike letters/digits (O/0, I/L/1, S/5, B/8, Z/2) because OCR confuses them.
 const canon = s => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
 export function matchText(text, products) {
@@ -285,10 +318,10 @@ async function cartView(kind) {
   const total = () => calc(cart.items, cart.cust.disc).net, sub = () => calc(cart.items, cart.cust.disc);
   const draw = () => {
     const pcs = cart.items.reduce((a, i) => a + i.q, 0), ctn = cart.items.reduce((a, i) => a + i.q / cf(i), 0);
-    $('#app').innerHTML = top((R ? 'Return • ' : 'Visit • ') + esc(cart.cust.en)) + `<div class="wrap">
+    $('#app').innerHTML = top((R ? 'Return • ' : 'Visit • ') + esc(cart.cust.en + (cart.cust.ar ? ' • ' + cart.cust.ar : ''))) + `<div class="wrap">
       ${cart.cust.disc ? `<div class="pill g" style="margin-bottom:8px">Customer discount ${cart.cust.disc}%</div>` : ''}
       <div class="grid" style="margin-bottom:10px"><button class="btn" id="sc">📷 Scan</button><button class="btn l" id="se">🔎 Search item</button></div>
-      <button class="btn l" id="ph" style="margin-top:0">${R ? '🖼 Photo: barcode or printed item number' : '🖼 Read barcode from photo'}</button><input type="file" id="pf" accept="image/*" multiple style="display:none">
+      <button class="btn l" id="ph" style="margin-top:0">${R ? '📄 Return sheet photos (camera or gallery, many pages)' : '🖼 Read barcode from photo'}</button><input type="file" id="pf" accept="image/*" multiple style="display:none">
       ${cart.items.length === 0 ? '<div class="card sub">No items yet. Scan a barcode or search for an item.</div>' : ''}
       ${R ? cart.items.map((it, i) => `<div class="card pc">${X.img(it.c)}<div class="pcb"><div class="row"><b>${esc(it.c)}</b><button class="pill r" data-rm="${i}" style="border:0">Remove</button></div>
         <div class="sub">${esc(it.en)}</div><div class="ar sub">${esc(it.ar)}</div>
@@ -342,7 +375,7 @@ async function cartView(kind) {
     };
     $('#se').onclick = searchItem;
     $('#cr').onclick = R ? createReturn : askDelivery;
-    $('#ph').onclick = () => $('#pf').click();
+    $('#ph').onclick = R ? sheetPhotos : () => $('#pf').click();
     $('#pf').onchange = async e => {
       const fs = [...e.target.files]; e.target.value = ''; if (!fs.length) return;
       let ok = 0, bad = 0, unknown = null;
@@ -368,6 +401,55 @@ async function cartView(kind) {
       if (unknown) linkBarcode(unknown);
     };
   };
+  function sheetPhotos() {   // take as many photos as the sheet has pages (camera and/or gallery), then read them all
+    const pages = [];
+    const m = X.modal(`<h3>📄 Return sheet photos</h3><div class="sub">Take a photo of every page (tap the camera as many times as you need) or choose many from the gallery. Then tap Read.</div>
+      <div id="th" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div><div id="ct" class="sub">No pages yet</div>
+      <button class="btn" id="cam">📸 Take a photo</button><button class="btn l" id="gal">🖼 Choose from gallery (many)</button>
+      <button class="btn g" id="rd" disabled style="opacity:.5">Read all pages</button><button class="btn l" id="cl">Close</button>
+      <input type="file" id="fc" accept="image/*" capture="environment" style="display:none"><input type="file" id="fg" accept="image/*" multiple style="display:none">`);
+    m.classList.add('mc'); m.onclick = null;
+    const urls = [], redraw = () => {
+      m.querySelector('#th').innerHTML = pages.map((f, i) => `<div style="position:relative"><img src="${urls[i]}" style="width:64px;height:84px;object-fit:cover;border-radius:8px"><button data-x="${i}" style="position:absolute;top:-6px;right:-6px;border:0;border-radius:50%;width:22px;height:22px;background:#c0392b;color:#fff">×</button></div>`).join('');
+      m.querySelector('#ct').textContent = pages.length ? pages.length + ' page(s) ready' : 'No pages yet';
+      const rd = m.querySelector('#rd'); rd.disabled = !pages.length; rd.style.opacity = pages.length ? 1 : .5;
+      m.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { URL.revokeObjectURL(urls[+b.dataset.x]); urls.splice(+b.dataset.x, 1); pages.splice(+b.dataset.x, 1); redraw(); });
+    };
+    const add = fs => { [...fs].forEach(f => { pages.push(f); urls.push(URL.createObjectURL(f)); }); redraw(); };
+    m.querySelector('#cam').onclick = () => m.querySelector('#fc').click();
+    m.querySelector('#gal').onclick = () => m.querySelector('#fg').click();
+    m.querySelector('#fc').onchange = e => { add(e.target.files); e.target.value = ''; };
+    m.querySelector('#fg').onchange = e => { add(e.target.files); e.target.value = ''; };
+    const close = () => { urls.forEach(u => URL.revokeObjectURL(u)); m.remove(); };
+    m.querySelector('#cl').onclick = close;
+    m.querySelector('#rd').onclick = async () => {
+      const rd = m.querySelector('#rd'); rd.disabled = true; const found = new Map(); let bad = 0;
+      for (let i = 0; i < pages.length; i++) {
+        rd.textContent = `Reading page ${i + 1} of ${pages.length}… (first time takes a few seconds)`;
+        try {
+          const r = parseSheet(await ocrSheet(pages[i]), S.products); if (!r.length) bad++;
+          r.forEach(x => { const o = found.get(x.p.c); if (o) { o.q += x.q; o.sure = o.sure && x.sure; } else found.set(x.p.c, { ...x }); });
+        } catch (err) { console.error(err); bad++; }
+      }
+      close(); reviewSheet([...found.values()], bad);
+    };
+  }
+  function reviewSheet(list, bad) {   // show everything that was read so nothing is lost or wrong before it goes into the return
+    const m = X.modal(`<h3>Items found: ${list.length}</h3><div class="sub">Check each line. Untick what is wrong and fix any quantity. <span class="pill o">?</span> means I could not read the quantity, so it says 1.${bad ? ` Nothing readable in ${bad} page(s): retake closer and sharper.` : ''}</div>
+      <div id="rv">${list.map((x, i) => `<div class="card" style="padding:8px"><div class="row"><label style="margin:0;display:flex;gap:8px;align-items:center;flex:1"><input type="checkbox" data-k="${i}" checked style="width:22px;height:22px;margin:0"><span><b>${esc(x.p.c)}</b> ${x.sure ? '' : '<span class="pill o">?</span>'}<div class="sub">${esc(x.p.en || '')}</div></span></label><input type="number" inputmode="numeric" data-n="${i}" value="${x.q}" style="width:76px;margin:0"></div></div>`).join('') || '<div class="card sub">No items could be read. Try a closer, sharper photo, or use Search.</div>'}</div>
+      <button class="btn g" id="ad" ${list.length ? '' : 'disabled'}>Add checked items to the return</button><button class="btn l" id="cl">Cancel</button>`);
+    m.classList.add('mc'); m.onclick = null; m.querySelector('#cl').onclick = () => m.remove();
+    m.querySelector('#ad').onclick = () => {
+      let n = 0;
+      list.forEach((x, i) => {
+        if (!m.querySelector(`[data-k="${i}"]`).checked) return;
+        const q = Math.max(1, Math.floor(+m.querySelector(`[data-n="${i}"]`).value) || 1), ex = cart.items.find(c => c.c === x.p.c);
+        if (ex) ex.q += q; else cart.items.push({ c: x.p.c, en: x.p.en, ar: x.p.ar, pk: x.p.pk || 1, stock: x.p.q, list: x.p.p, p: x.p.p, q, shelf: false, note: '' });
+        n++;
+      });
+      saveCart(kind); m.remove(); draw(); toast(n + ' item(s) added to the return');
+    };
+  }
   function pickOne(list, code) {
     const m = X.modal(`<h3>Which item is it?</h3><div class="sub">The photo matched more than one item. Tap the right one.</div>${list.map(p => `<div class="card" data-c="${esc(p.c)}"><b>${esc(p.c)}</b><div class="sub">${esc(p.en)}</div><div class="ar sub">${esc(p.ar)}</div></div>`).join('')}<button class="btn l" id="cl">Close</button>`);
     m.querySelector('#cl').onclick = () => m.remove();
@@ -478,7 +560,7 @@ async function cartView(kind) {
   function askDelivery() {   // centered pop-up: pick the delivery date, then the invoice is created
     if (!cart.items.some(i => i.q > 0)) return;
     const tm = iso(new Date(Date.now() + 864e5)), t0 = iso(new Date());
-    const m = X.modal(`<h3 style="text-align:center">🚚 Delivery date<br><span class="ar">تاريخ التوصيل</span></h3><div class="sub" style="text-align:center">${esc(cart.cust.en + (cart.branch ? ' – ' + cart.branch : ''))}</div>
+    const m = X.modal(`<h3 style="text-align:center">🚚 Delivery date<br><span class="ar">تاريخ التوصيل</span></h3><div class="sub" style="text-align:center">${esc(cart.cust.en + (cart.branch ? ' – ' + cart.branch : ''))}</div><div class="ar sub" style="text-align:center">${esc(cart.cust.ar || '')}</div>
       <input type="date" id="dlv" value="${cart.delivery && cart.delivery >= t0 ? cart.delivery : tm}" min="${t0}" style="font-size:20px;text-align:center">
       <button class="btn g" id="dok">Confirm & create invoice • تأكيد</button><button class="btn l" id="dno">Back • رجوع</button>`);
     m.classList.add('mc'); m.onclick = null;
@@ -541,7 +623,7 @@ function done(inv) {
     <div class="sub">${inv.pieces} pieces • ${inv.cartons.toFixed(2)} cartons</div></div>
     <button class="btn g" id="sh">📤 Share (WhatsApp / Email)</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
   $('#bk').onclick = () => go('home');
-  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv)), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
+  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv), true), fname, mode); } catch (e) { console.error(e); toast('Could not build the Excel file'); } };
   $('#sh').onclick = () => run('share'); $('#dl').onclick = () => run('download');
   $('#nw').onclick = () => go('invoice'); $('#hm').onclick = () => go('home');
 }
@@ -554,7 +636,7 @@ async function recentList() {
   catch (e) { return ($('#rl').innerHTML = '<div class="card">Could not load invoices.</div>'); }
   if (S.user.role === 'sales') L = L.filter(i => i.by === S.user.uid);
   $('#rl').innerHTML = L.length ? L.map(i => `<div class="card" data-id="${i.id}"><div class="row"><b>${esc(i.no)}</b><span class="pill ${i.status === 'cancelled' ? 'r' : 'g'}">${i.status === 'cancelled' ? 'CANCELLED' : kwd(i.total)}</span></div>
-    <div>${esc(nm(i))}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • delivery ${esc(i.delivery)}</div></div>`).join('') : '<div class="card sub">No invoices yet.</div>';
+    <div>${esc(nm(i))}</div><div class="ar sub">${esc(i.custAr)}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • delivery ${esc(i.delivery)}</div></div>`).join('') : '<div class="card sub">No invoices yet.</div>';
   document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => openInvoice(L.find(i => i.id === c.dataset.id)));
 }
 
@@ -564,14 +646,14 @@ async function recentVisits() {
   try { L = (await getDocs(query(collection(X.db, 'shelf'), orderBy('created', 'desc'), limit(80)))).docs.map(d => ({ id: d.id, ...d.data() })); }
   catch (e) { return ($('#rl').innerHTML = '<div class="card">Could not load visits.</div>'); }
   if (S.user.role === 'sales') L = L.filter(v => v.by === S.user.uid);
-  $('#rl').innerHTML = L.length ? L.map(v => `<div class="card" data-id="${v.id}"><div class="row"><b>${esc(nm(v))}</b><span class="pill ${v.invoiced ? 'g' : (v.draft || []).length ? 'o' : 'm'}">${v.invoiced ? esc(v.invoiced) : (v.draft || []).length ? 'draft order' : 'visit'}</span></div>
+  $('#rl').innerHTML = L.length ? L.map(v => `<div class="card" data-id="${v.id}"><div class="row"><b>${esc(nm(v))}</b><span class="pill ${v.invoiced ? 'g' : (v.draft || []).length ? 'o' : 'm'}">${v.invoiced ? esc(v.invoiced) : (v.draft || []).length ? 'draft order' : 'visit'}</span></div><div class="ar sub">${esc(v.custAr)}</div>
     <div class="sub">${esc(v.date)} • by ${esc(v.byName)} • ${(v.shelf || []).length} on shelf${(v.draft || []).length ? ' • ' + v.draft.length + ' ordered' : ''}</div></div>`).join('') : '<div class="card sub">No visits yet.</div>';
   document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => openVisit(L.find(v => v.id === c.dataset.id)));
 }
 async function openVisit(v) {
   const { S, esc } = X; await X.loadProducts();
   const P = c => S.products.find(p => p.c === c);
-  const m = X.modal(`<h3>${esc(nm(v))}</h3><div class="sub">${esc(v.date)} • by ${esc(v.byName)}${v.invoiced ? ' • invoiced ' + esc(v.invoiced) : ''}</div>
+  const m = X.modal(`<h3>${esc(nm(v))}</h3><div class="ar sub">${esc(v.custAr)}</div><div class="sub">${esc(v.date)} • by ${esc(v.byName)}${v.invoiced ? ' • invoiced ' + esc(v.invoiced) : ''}</div>
     <b>On his shelf (${(v.shelf || []).length})</b>${(v.shelf || []).map(c => `<div class="sub">✔ ${esc(c)} ${esc((P(c) || {}).en || '')}</div>`).join('') || '<div class="sub">—</div>'}
     <b style="display:block;margin-top:8px">Draft order (${(v.draft || []).length})</b>${(v.draft || []).map(d => `<div class="sub">${esc(d.c)} × ${d.q}</div>`).join('') || '<div class="sub">—</div>'}
     ${v.invoiced ? '' : '<button class="btn g" id="op">Open to edit / make the invoice</button>'}<button class="btn l" id="cl">Close</button>`);
@@ -595,7 +677,7 @@ function openInvoice(inv) {
     ${inv.dm === 'end' && inv.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(inv.subtotal)}</span></div><div class="row"><span>Discount ${inv.disc}%</span><span>-${kwd(inv.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Total</b><b>${kwd(inv.total)} KWD</b></div>
     <button class="btn g" id="sh">📤 Share Excel</button><button class="btn" id="dl">⬇️ Download Excel</button>
     ${admin && inv.status === 'active' ? '<button class="btn r" id="cx">Cancel this invoice (stock returns)</button>' : ''}<button class="btn l" id="cl">Close</button>`);
-  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv)), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
+  const run = async mode => { try { await sendFile(await buildExcel(inv.items, fname, dOf(inv), true), fname, mode); } catch (e) { toast('Could not build the Excel file'); } };
   m.querySelector('#sh').onclick = () => run('share'); m.querySelector('#dl').onclick = () => run('download'); m.querySelector('#cl').onclick = () => m.remove();
   const cx = m.querySelector('#cx');
   if (cx) cx.onclick = async () => {
@@ -634,10 +716,10 @@ async function recentReturns() {
   catch (e) { return ($('#rl').innerHTML = '<div class="card">Could not load returns.</div>'); }
   if (S.user.role === 'sales') L = L.filter(i => i.by === S.user.uid);
   $('#rl').innerHTML = L.length ? L.map(i => `<div class="card" data-id="${i.id}"><div class="row"><b>${esc(i.no)}</b><span class="pill g">${kwd(i.total)}</span></div>
-    <div>${esc(nm(i))}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • damaged ${i.damagedPcs}</div></div>`).join('') : '<div class="card sub">No returns yet.</div>';
+    <div>${esc(nm(i))}</div><div class="ar sub">${esc(i.custAr)}</div><div class="sub">${esc(i.date)} • by ${esc(i.byName)} • damaged ${i.damagedPcs}</div></div>`).join('') : '<div class="card sub">No returns yet.</div>';
   document.querySelectorAll('#rl .card[data-id]').forEach(c => c.onclick = () => {
     const r = L.find(i => i.id === c.dataset.id), fname = `${safe(nm(r))} RETURN ${dmy(new Date(r.created))}.xlsx`;
-    const m = X.modal(`<h3>${esc(r.no)}</h3><div>${esc(nm(r))}</div><div class="sub">${esc(r.date)} • by ${esc(r.byName)}</div>
+    const m = X.modal(`<h3>${esc(r.no)}</h3><div>${esc(nm(r))}</div><div class="ar sub">${esc(r.custAr)}</div><div class="sub">${esc(r.date)} • by ${esc(r.byName)}</div>
       ${r.items.map(i => `<div class="row"><span>${esc(i.c)} × ${i.q} ${i.damaged ? '<span class="pill r">damaged</span>' : ''}</span><span>${kwd(i.q * i.p)}</span></div>`).join('')}
       ${r.dm === 'end' && r.disc ? `<div class="row" style="margin-top:8px"><span>Subtotal</span><span>${kwd(r.subtotal)}</span></div><div class="row"><span>Discount ${r.disc}%</span><span>-${kwd(r.discAmt)}</span></div>` : ''}<div class="row" style="margin-top:8px"><b>Credit</b><b>${kwd(r.total)} KWD</b></div>
       <button class="btn g" id="sh">📤 Share Excel</button><button class="btn" id="dl">⬇️ Download Excel</button><button class="btn l" id="cl">Close</button>`);
