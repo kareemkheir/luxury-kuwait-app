@@ -302,7 +302,6 @@ async function cartView(kind) {
         ${Sh.length ? `<h3 style="margin:14px 0 4px">✔ متوفر عنده (${Sh.length})</h3>${Sh.map(({ it, i }) => `<div class="row" style="padding:4px 0;border-bottom:1px solid #eee"><span><b>${esc(it.c)}</b> <span class="sub">${esc(it.en)}</span></span><label style="margin:0"><input type="checkbox" data-sh="${i}" checked style="width:22px;height:22px;margin:0"></label></div>`).join('')}` : ''}`; })()}`}
       ${R ? `<div class="card"><div class="row"><span>Pieces</span><b>${pcs}</b></div><div class="row"><span>Cartons</span><b>${ctn.toFixed(2)}</b></div>
         ${cart.cust.disc ? `<div class="row"><span>Subtotal</span><b>${kwd(sub().sub)}</b></div><div class="row"><span>Discount ${cart.cust.disc}%</span><b>-${kwd(sub().da)}</b></div>` : ''}<div class="row"><span>Total (KWD)</span><b style="font-size:22px">${kwd(total())}</b></div></div>` : ''}
-      ${R ? '' : `<label>Delivery date • تاريخ التوصيل</label><input type="date" id="dd" value="${cart.delivery}">`}
       <label>Branch / city • الفرع / المنطقة (optional)</label><input id="br" list="brl" placeholder="e.g. Jahra, Salmiya" value="${esc(cart.branch || '')}"><datalist id="brl">${brList(cart.cust.id).map(b => `<option value="${esc(b)}">`).join('')}</datalist>
       <label>Note (optional)</label><input id="nt" value="${esc(cart.note)}">
       ${R ? '' : `<button class="btn" id="sv" ${cart.items.length ? '' : 'disabled style="opacity:.5"'}>💾 Save visit (shelf + draft order)</button>`}
@@ -319,7 +318,6 @@ async function cartView(kind) {
     });
     document.querySelectorAll('[data-sh]').forEach(c => c.onchange = () => { const it = cart.items[+c.dataset.sh]; it.shelf = c.checked; if (!it.shelf && !it.q) cart.items.splice(+c.dataset.sh, 1); saveCart(kind); draw(); });
     const sv = $('#sv'); if (sv) sv.onclick = saveOnly;
-    const dd = $('#dd'); if (dd) dd.onchange = e => { cart.delivery = e.target.value; saveCart(kind); };
     document.querySelectorAll('[data-nt]').forEach(inp => inp.onchange = () => { cart.items[+inp.dataset.nt].note = inp.value; saveCart(kind); draw(); });
     document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { cart.items[+b.dataset.dm].note = 'damaged'; saveCart(kind); draw(); });
     $('#nt').onchange = e => { cart.note = e.target.value; saveCart(kind); };
@@ -343,7 +341,7 @@ async function cartView(kind) {
       });
     };
     $('#se').onclick = searchItem;
-    $('#cr').onclick = R ? createReturn : create;
+    $('#cr').onclick = R ? createReturn : askDelivery;
     $('#ph').onclick = () => $('#pf').click();
     $('#pf').onchange = async e => {
       const fs = [...e.target.files]; e.target.value = ''; if (!fs.length) return;
@@ -476,6 +474,16 @@ async function cartView(kind) {
     $('#app').innerHTML = top(qd ? 'Visit saved on phone ✓' : 'Visit saved ✓') + `<div class="wrap"><div class="card" style="text-align:center"><div style="font-size:44px">🧺</div><h2>${esc(cu)}</h2><div>${n} item(s) on his shelf</div>${qd ? '<div style="color:#b45309;margin-top:6px">No signal: it will upload automatically when the internet returns. Open the app once with signal. • سيتم الرفع تلقائيا عند عودة الإنترنت</div>' : ''}<div class="sub">${o ? o + ' item(s) saved as a draft order — open it from the Visits tab to make the invoice' : 'No order'}</div></div>
       <button class="btn g" id="nw">New visit</button><button class="btn l" id="hm">Home</button></div>`;
     $('#bk').onclick = () => go('home'); $('#nw').onclick = () => go('invoice'); $('#hm').onclick = () => go('home');
+  }
+  function askDelivery() {   // centered pop-up: pick the delivery date, then the invoice is created
+    if (!cart.items.some(i => i.q > 0)) return;
+    const tm = iso(new Date(Date.now() + 864e5)), t0 = iso(new Date());
+    const m = X.modal(`<h3 style="text-align:center">🚚 Delivery date<br><span class="ar">تاريخ التوصيل</span></h3><div class="sub" style="text-align:center">${esc(cart.cust.en + (cart.branch ? ' – ' + cart.branch : ''))}</div>
+      <input type="date" id="dlv" value="${cart.delivery && cart.delivery >= t0 ? cart.delivery : tm}" min="${t0}" style="font-size:20px;text-align:center">
+      <button class="btn g" id="dok">Confirm & create invoice • تأكيد</button><button class="btn l" id="dno">Back • رجوع</button>`);
+    m.classList.add('mc'); m.onclick = null;
+    m.querySelector('#dno').onclick = () => m.remove();
+    m.querySelector('#dok').onclick = () => { const v = m.querySelector('#dlv').value; if (!v) return toast('Pick a delivery date • اختر التاريخ'); cart.delivery = v; saveCart(kind); m.remove(); create(); };
   }
   async function create() {
     if (!navigator.onLine) return alert('No internet. Invoices need a connection so stock stays correct.\nTap "Save visit" now and make the invoice later.\nلا يوجد اتصال: احفظ الزيارة وأنشئ الفاتورة لاحقا');

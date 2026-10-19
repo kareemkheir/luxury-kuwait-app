@@ -32,6 +32,8 @@ label{font-size:14px;color:var(--m);font-weight:600}
 #toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#17202e;color:#fff;padding:12px 18px;border-radius:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99;max-width:90%}
 #toast.on{opacity:1}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.modal.mc{align-items:center;padding:16px}
+.modal.mc>div{border-radius:20px}
 .modal>div{background:var(--bg);width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:16px;max-height:92vh;overflow:auto}
 .tabs{display:flex;gap:8px;margin-bottom:10px;overflow:auto}
 .tabs button{flex:1;border:0;border-radius:12px;padding:11px 8px;font-size:15px;font-weight:700;background:#e8eef9;color:var(--b);white-space:nowrap}
